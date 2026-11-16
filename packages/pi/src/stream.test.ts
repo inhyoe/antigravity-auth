@@ -273,10 +273,16 @@ describe('selected credential boundary', () => {
       'running inside pi',
     )
     expect(bodies[0]!.systemInstruction.parts[0].text).toBe(
-      'You are a coding assistant running inside your development environment.',
+      'You are a coding agent.',
+    )
+    expect(bodies[0]!.contents[0].parts[0].text).toBe(
+      'You are a coding assistant running inside your development environment.\n\ntest',
     )
     expect(JSON.stringify(bodies[1]!.systemInstruction)).toBe(
       JSON.stringify(bodies[0]!.systemInstruction),
+    )
+    expect(JSON.stringify(bodies[1]!.contents[0])).toBe(
+      JSON.stringify(bodies[0]!.contents[0]),
     )
   })
 
@@ -332,9 +338,11 @@ describe('selected credential boundary', () => {
     const phrase = 'You are a coding assistant running inside pi.'
     fetchWithAgyCliTransportMock.mockImplementationOnce(
       async (_url: string, init: RequestInit) => {
-        expect(
-          JSON.parse(String(init.body)).request.systemInstruction.parts[0].text,
-        ).toBe(phrase)
+        const wireReq = JSON.parse(String(init.body)).request
+        expect(wireReq.systemInstruction.parts[0].text).toBe(
+          'You are a coding agent.',
+        )
+        expect(wireReq.contents[0].parts[0].text).toBe(`${phrase}\n\ntest`)
         return new Response(
           JSON.stringify({ error: { status: 'RESOURCE_EXHAUSTED' } }),
           { status: 429 },
@@ -1650,10 +1658,13 @@ describe('streamCortexKitAntigravity', () => {
     expect(body.request.systemInstruction).toEqual({
       // The captured agy CLI 1.5.8 shape includes this role and separate function wrappers.
       role: 'system',
-      parts: [{ text: 'be terse\n\nanswer in English' }],
+      parts: [{ text: 'You are a coding agent.' }],
     })
     expect(body.request.contents).toEqual([
-      { role: 'user', parts: [{ text: 'hi' }] },
+      {
+        role: 'user',
+        parts: [{ text: 'be terse\n\nanswer in English\n\nhi' }],
+      },
     ])
     expect(body.request).not.toHaveProperty('toolConfig')
     expect(body.request.tools).toHaveLength(2)

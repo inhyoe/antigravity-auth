@@ -33,7 +33,7 @@ describe('buildGeminiRequest on a pi-ai runtime without transcript helpers', () 
     expect(request.systemInstruction).toEqual({
       // The agy 1.5.8 system role is independent of the installed Pi runtime.
       role: 'system',
-      parts: [{ text: 'be terse' }],
+      parts: [{ text: 'You are a coding agent.' }],
     })
     expect(request.tools?.[0]?.functionDeclarations[0]?.name).toBe('read')
   })

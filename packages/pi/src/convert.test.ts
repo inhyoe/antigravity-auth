@@ -69,12 +69,15 @@ describe('buildGeminiRequest', () => {
     })
     for (const input of [context, normalizeContext(context)]) {
       const request = buildGeminiRequest(input)
-      expect(request.systemInstruction?.parts).toEqual([
+      expect(request.systemInstruction).toEqual({
+        role: 'system',
+        parts: [{ text: 'You are a coding agent.' }],
+      })
+      expect(request.contents[0]?.parts).toEqual([
         {
-          text: 'You are a coding assistant running inside your development environment.',
+          text: `You are a coding assistant running inside your development environment.\n\n${phrase}`,
         },
       ])
-      expect(request.contents[0]?.parts).toEqual([{ text: phrase }])
       expect(request.contents[1]?.parts).toEqual([{ text: phrase }])
       expect(request.contents[2]?.parts).toEqual([
         {
@@ -89,11 +92,89 @@ describe('buildGeminiRequest', () => {
         phrase,
       )
       const next = buildGeminiRequest(input)
-      expect(JSON.stringify(next.systemInstruction)).toBe(
-        JSON.stringify(request.systemInstruction),
-      )
+      expect(JSON.stringify(next)).toBe(JSON.stringify(request))
     }
     expect(context.systemPrompt).toBe(phrase)
+  })
+
+  it('neutralizes Pi-Bolt opener and default second sentence only in relocated system instructions', () => {
+    const piBoltDefault =
+      'You are a coding assistant running inside Pi-Bolt, a build of pi (a coding agent harness) compiled ahead of time. Help users inspect files, run commands, and modify code.'
+    const context = ctx({
+      systemPrompt: piBoltDefault,
+      tools: [
+        {
+          name: 'read',
+          description: piBoltDefault,
+          parameters: Type.Object({ path: Type.String() }),
+        },
+      ],
+      messages: [
+        { role: 'user', content: piBoltDefault, timestamp: 1 },
+        assistant({
+          content: [{ type: 'text', text: piBoltDefault }],
+          api: 'google-generative-ai',
+          provider: 'google',
+          model: 'gemini-3.8-flash',
+          stopReason: 'stop',
+        }),
+      ],
+    })
+
+    const request = buildGeminiRequest(context)
+    expect(request.systemInstruction).toEqual({
+      role: 'system',
+      parts: [{ text: 'You are a coding agent.' }],
+    })
+    expect(request.contents[0]?.parts).toEqual([
+      {
+        text: `You are a coding assistant running inside your development environment. Assist users with inspecting files, running commands, and modifying code.\n\n${piBoltDefault}`,
+      },
+    ])
+    expect(request.contents[1]?.parts).toEqual([{ text: piBoltDefault }])
+    expect(request.tools?.[0]?.functionDeclarations[0]?.description).toBe(
+      piBoltDefault,
+    )
+  })
+
+  it('creates a leading user turn for relocated instructions when messages have no user turn', () => {
+    const emptyMessagesReq = buildGeminiRequest(
+      ctx({ systemPrompt: 'follow rules', messages: [] }),
+    )
+    expect(emptyMessagesReq.systemInstruction).toEqual({
+      role: 'system',
+      parts: [{ text: 'You are a coding agent.' }],
+    })
+    expect(emptyMessagesReq.contents).toEqual([
+      { role: 'user', parts: [{ text: 'follow rules' }] },
+    ])
+
+    const modelOnlyReq = buildGeminiRequest(
+      ctx({
+        systemPrompt: 'follow rules',
+        messages: [
+          assistant({
+            content: [{ type: 'text', text: 'ready' }],
+            api: 'google-generative-ai',
+            provider: 'google',
+            model: 'antigravity-gemini-3.8-flash',
+            stopReason: 'stop',
+          }),
+        ],
+      }),
+    )
+    expect(modelOnlyReq.contents).toEqual([
+      { role: 'user', parts: [{ text: 'follow rules' }] },
+      { role: 'model', parts: [{ text: 'ready' }] },
+    ])
+  })
+
+  it('ignores whitespace-only systemPrompt without emitting systemInstruction or extra user turns', () => {
+    const request = buildGeminiRequest(
+      ctx({ systemPrompt: '   \n\t  ', messages: [] }),
+    )
+    expect(request).not.toHaveProperty('systemInstruction')
+    expect(request.contents).toEqual([])
   })
   it('converts a string user message into a Gemini user content', () => {
     const request = buildGeminiRequest(
@@ -427,8 +508,11 @@ describe('buildGeminiRequest', () => {
     expect(request.systemInstruction).toEqual({
       // agy 1.5.8 includes the system role on the instruction.
       role: 'system',
-      parts: [{ text: 'be terse' }],
+      parts: [{ text: 'You are a coding agent.' }],
     })
+    expect(request.contents).toEqual([
+      { role: 'user', parts: [{ text: 'be terse\n\nhi' }] },
+    ])
     const decl = request.tools?.[0]?.functionDeclarations[0]
     expect(decl?.name).toBe('read')
     // Must match the agy wire format: field name `parameters`, sanitized to
@@ -440,9 +524,10 @@ describe('buildGeminiRequest', () => {
     })
   })
 
-  it('converts image content into inlineData', () => {
+  it('converts image content into inlineData and preserves it when relocating systemPrompt', () => {
     const request = buildGeminiRequest(
       ctx({
+        systemPrompt: 'inspect image carefully',
         messages: [
           {
             role: 'user',
@@ -455,8 +540,29 @@ describe('buildGeminiRequest', () => {
         ],
       }),
     )
+    expect(request.systemInstruction).toEqual({
+      role: 'system',
+      parts: [{ text: 'You are a coding agent.' }],
+    })
     expect(request.contents[0]?.parts).toEqual([
-      { text: 'look' },
+      { text: 'inspect image carefully\n\nlook' },
+      { inlineData: { mimeType: 'image/png', data: 'BASE64' } },
+    ])
+
+    const imageOnlyReq = buildGeminiRequest(
+      ctx({
+        systemPrompt: 'inspect image carefully',
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'image', data: 'BASE64', mimeType: 'image/png' }],
+            timestamp: 0,
+          },
+        ],
+      }),
+    )
+    expect(imageOnlyReq.contents[0]?.parts).toEqual([
+      { text: 'inspect image carefully' },
       { inlineData: { mimeType: 'image/png', data: 'BASE64' } },
     ])
   })
@@ -504,14 +610,17 @@ describe('buildGeminiRequest with Pi transcript system messages', () => {
     expect(request.systemInstruction).toEqual({
       // agy 1.5.8 includes the system role on the instruction.
       role: 'system',
-      parts: [
-        {
-          text: 'base prompt\n\nextra instruction\n\nfirst block\nsecond block',
-        },
-      ],
+      parts: [{ text: 'You are a coding agent.' }],
     })
     expect(request.contents).toEqual([
-      { role: 'user', parts: [{ text: 'hi' }] },
+      {
+        role: 'user',
+        parts: [
+          {
+            text: 'base prompt\n\nextra instruction\n\nfirst block\nsecond block\n\nhi',
+          },
+        ],
+      },
       { role: 'user', parts: [{ text: 'again' }] },
     ])
   })
@@ -538,8 +647,14 @@ describe('buildGeminiRequest with Pi transcript system messages', () => {
     expect(request.systemInstruction).toEqual({
       // agy 1.5.8 includes the system role on the instruction.
       role: 'system',
-      parts: [{ text: 'base\n\n<rules>new</rules>' }],
+      parts: [{ text: 'You are a coding agent.' }],
     })
+    expect(request.contents).toEqual([
+      {
+        role: 'user',
+        parts: [{ text: 'base\n\n<rules>new</rules>\n\nhi' }],
+      },
+    ])
   })
 
   it('applies tool additions, removals, and redefinitions in order', () => {
@@ -607,8 +722,11 @@ describe('buildGeminiRequest with Pi transcript system messages', () => {
     expect(fromFlat.systemInstruction).toEqual({
       // agy 1.5.8 includes the system role on the instruction.
       role: 'system',
-      parts: [{ text: 'be terse' }],
+      parts: [{ text: 'You are a coding agent.' }],
     })
+    expect(fromFlat.contents).toEqual([
+      { role: 'user', parts: [{ text: 'be terse\n\nhi' }] },
+    ])
     expect(declarationNames(fromFlat)).toEqual(['read'])
     expect(buildGeminiRequest(normalizeContext(flat))).toEqual(fromFlat)
   })

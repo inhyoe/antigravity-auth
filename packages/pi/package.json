@@ -1,5 +1,5 @@
 {
-  "name": "@cortexkit/pi-antigravity-auth",
+  "name": "@inhyoe/pi-antigravity-auth",
   "version": "3.1.2",
   "description": "Google Antigravity OAuth extension for pi - access Gemini and Claude models using Google credentials",
   "type": "module",
@@ -7,7 +7,7 @@
   "author": "CortexKit",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cortexkit/antigravity-auth.git",
+    "url": "git+https://github.com/inhyoe/antigravity-auth.git",
     "directory": "packages/pi"
   },
   "main": "./dist/index.js",
@@ -40,7 +40,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json --emitDeclarationOnly && esbuild src/index.ts --bundle --platform=node --format=esm --external:@earendil-works/* --external:@cortexkit/antigravity-auth-core --external:@cortexkit/claustrum-client --external:@cortexkit/subc-client --outfile=dist/index.js --sourcemap",
     "typecheck": "tsc --noEmit",
     "test": "bun test --isolate ./src",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@cortexkit/antigravity-auth-core": "3.1.2",

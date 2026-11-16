@@ -282,6 +282,13 @@ function resolveInstructionState(context: Context): InstructionState {
  * transcript form Pi 0.86+ passes to providers and the flat `Context` of
  * older runtimes.
  */
+function neutralizeDefaultPromptPhrases(text: string): string {
+  return rewriteHarnessIdentity(sanitize(text)).replace(
+    /Help users inspect files,\s*run commands,\s*and modify code\./gi,
+    'Assist users with inspecting files, running commands, and modifying code.',
+  )
+}
+
 export function buildGeminiRequest(
   context: Context,
   options?: BuildGeminiRequestOptions,
@@ -296,9 +303,36 @@ export function buildGeminiRequest(
   if (geminiTools) request.tools = geminiTools
 
   if (systemPrompt.trim()) {
+    // Relocate resolved Pi instructions into the leading user turn (merging
+    // into an existing plain text part to preserve agy CLI's single-part wire
+    // shape) and keep a minimal systemInstruction so the Antigravity proxy
+    // does not reject Pi instruction blocks with false 429 errors.
+    const instructionText = neutralizeDefaultPromptPhrases(systemPrompt)
+    const firstUser = request.contents.find((turn) => turn.role === 'user')
+    if (firstUser) {
+      const firstPart = firstUser.parts[0]
+      if (
+        firstPart &&
+        'text' in firstPart &&
+        !firstPart.thought &&
+        !firstPart.thoughtSignature
+      ) {
+        firstUser.parts = [
+          { text: `${instructionText}\n\n${firstPart.text}` },
+          ...firstUser.parts.slice(1),
+        ]
+      } else {
+        firstUser.parts = [{ text: instructionText }, ...firstUser.parts]
+      }
+    } else {
+      request.contents.unshift({
+        role: 'user',
+        parts: [{ text: instructionText }],
+      })
+    }
     request.systemInstruction = {
       role: 'system',
-      parts: [{ text: rewriteHarnessIdentity(sanitize(systemPrompt)) }],
+      parts: [{ text: 'You are a coding agent.' }],
     }
   }
 
