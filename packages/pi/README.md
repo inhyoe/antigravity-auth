@@ -1,4 +1,24 @@
-# @cortexkit/pi-antigravity-auth
+# @inhyoe/pi-antigravity-auth
+
+> **Fork of [`@cortexkit/pi-antigravity-auth`](https://www.npmjs.com/package/@cortexkit/pi-antigravity-auth) 3.1.2.**
+> Source: [inhyoe/antigravity-auth](https://github.com/inhyoe/antigravity-auth) (`packages/pi`).
+> The "Fork changes" section lists what this fork changes. The rest of this README is the upstream text, except the package name in Install.
+
+## Fork changes
+
+| Change | What it does | Commit |
+| --- | --- | --- |
+| Relocate system instructions | Pi's system prompt moves into the first user turn, merged into its first text part. `systemInstruction` keeps only `You are a coding agent.` | `48f861a` |
+| Neutralize default prompt phrase | The sentence "Help users inspect files, run commands, and modify code." is reworded before sending. | `48f861a` |
+| Package scope | Published as `@inhyoe/pi-antigravity-auth`, so `pi update` keeps these patches. | `48f861a` |
+| Windows publish | The `build` script removes `dist` with `node -e "fs.rmSync(...)"` instead of `rm -rf`, so `npm publish` works from `cmd.exe` and PowerShell. | `272d188` |
+
+### Result
+
+- **Before:** with Pi's (and Pi-Bolt's) default system prompt in the system slot, Antigravity returned false `429 RESOURCE_EXHAUSTED`. A minimal prompt on the same account and model passed (probes on 2026-11-15).
+- **After:** with the default Pi-Bolt prompt in a new Pi-Bolt process, `google/antigravity-gemini-4-carbon` (low) returned `stopReason: stop` in `durationMs: 7671` (2026-11-16).
+
+---
 
 Google Antigravity OAuth extension for [pi](https://github.com/earendil-works/pi-mono).
 Authenticate with your Google account and use Gemini 3 models through
@@ -11,7 +31,7 @@ Antigravity's endpoints.
 ## Install
 
 ```bash
-pi install npm:@cortexkit/pi-antigravity-auth
+pi install npm:@inhyoe/pi-antigravity-auth
 ```
 
 ## Login
