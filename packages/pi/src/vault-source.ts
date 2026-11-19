@@ -22,11 +22,11 @@ import {
   type VaultGrantReach,
   type VaultRouteRef,
   vaultAuthority,
-} from '@cortexkit/antigravity-auth-core'
+} from '@inhyoe/antigravity-auth-core'
 import type {
   ClaustrumEnrollmentConnection,
   ClaustrumScopedClient,
-} from '@cortexkit/antigravity-auth-core/common-auth/claustrum'
+} from '@inhyoe/antigravity-auth-core/common-auth/claustrum'
 
 import {
   PI_ACCOUNT_MODELS_REFUSAL,

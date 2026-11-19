@@ -3,6 +3,7 @@ import {
   isGeminiArgonModel,
   isGeminiCarbonModel,
   isGeminiHydrogenModel,
+  isGeminiNeonModel,
 } from '../model-registry.ts'
 
 const ADAPTIVE_LEVELS: Readonly<Record<number, string>> = {
@@ -47,7 +48,9 @@ export function applyAgyNativeGenerationConfig(
         ? { thinkingBudget: budget }
         : { thinkingLevel: capturedTier.toUpperCase() }),
     }
-  } else if (isGeminiHydrogenModel(wireModel)) {
+  } else if (isGeminiHydrogenModel(wireModel) || isGeminiNeonModel(wireModel)) {
+    // Neon publishes the same four efforts as Hydrogen (catalog thinkingLevel
+    // 1/2/3/100 on 19 Nov 2026), so it shares this mapping.
     const tier = wireModel.toLowerCase().split('-').at(-1)
     // The native CLI sends the numeric value 100 for XHigh, not a string.
     // The CLI capture shows LOW; MEDIUM and HIGH follow Carbon's mapping. A live

@@ -1,7 +1,7 @@
 import {
   rewriteHarnessIdentity,
   toGeminiSchema,
-} from '@cortexkit/antigravity-auth-core'
+} from '@inhyoe/antigravity-auth-core'
 import type {
   AssistantMessage,
   Context,

@@ -1,4 +1,4 @@
-// @cortexkit/antigravity-auth-core
+// @inhyoe/antigravity-auth-core
 // Harness-agnostic core surface. Modules are migrated here in stages.
 
 export * from './abort-forwarding.ts'

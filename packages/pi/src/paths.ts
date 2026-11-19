@@ -5,4 +5,4 @@ export {
   getPiAntigravityVaultModeFile,
   getPiAntigravityVaultRosterFile,
   getPiConfigDir,
-} from '@cortexkit/antigravity-auth-core'
+} from '@inhyoe/antigravity-auth-core'

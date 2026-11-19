@@ -14,8 +14,8 @@ import {
   ACCOUNT_MODELS_REFUSAL_TEXT,
   AntigravityMenuRefusal,
   type VaultRouteRef,
-} from '@cortexkit/antigravity-auth-core'
-import { openSettings } from '@cortexkit/antigravity-auth-core/common-auth/settings'
+} from '@inhyoe/antigravity-auth-core'
+import { openSettings } from '@inhyoe/antigravity-auth-core/common-auth/settings'
 
 import { createPiAntigravityAccountSections } from './commands.ts'
 import {

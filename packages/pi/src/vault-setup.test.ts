@@ -16,17 +16,17 @@ import {
   type CommonAuthClaustrumModule,
   loadCommonAuthClaustrum,
   UNSUPPORTED_VAULT_CODE,
-} from '@cortexkit/antigravity-auth-core'
+} from '@inhyoe/antigravity-auth-core'
 import type {
   ClaustrumEnrollmentConnection,
   EnrollmentTokenFile,
-} from '@cortexkit/antigravity-auth-core/common-auth/claustrum'
+} from '@inhyoe/antigravity-auth-core/common-auth/claustrum'
 import type {
   ActionDefinition,
   CommandInvocation,
   PluginExtraSection,
   SectionContent,
-} from '@cortexkit/antigravity-auth-core/common-auth/commands'
+} from '@inhyoe/antigravity-auth-core/common-auth/commands'
 import { withVaultHost } from '../../../test/support/vault-host.ts'
 
 import {

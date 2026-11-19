@@ -37,13 +37,13 @@
     ]
   },
   "scripts": {
-    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json --emitDeclarationOnly && esbuild src/index.ts --bundle --platform=node --format=esm --external:@earendil-works/* --external:@cortexkit/antigravity-auth-core --external:@cortexkit/claustrum-client --external:@cortexkit/subc-client --outfile=dist/index.js --sourcemap",
+    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json --emitDeclarationOnly && esbuild src/index.ts --bundle --platform=node --format=esm --external:@earendil-works/* --external:@inhyoe/antigravity-auth-core --external:@cortexkit/claustrum-client --external:@cortexkit/subc-client --outfile=dist/index.js --sourcemap",
     "typecheck": "tsc --noEmit",
     "test": "bun test --isolate ./src",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@cortexkit/antigravity-auth-core": "3.1.9",
+    "@inhyoe/antigravity-auth-core": "3.1.10",
     "@cortexkit/claustrum-client": "0.18.0",
     "@cortexkit/subc-client": "0.24.0"
   },

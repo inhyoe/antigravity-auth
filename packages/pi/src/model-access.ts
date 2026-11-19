@@ -27,19 +27,19 @@ import {
   ACCOUNT_MODELS_REFUSAL_TEXT,
   type AntigravityAccountModelList,
   AntigravityMenuRefusal,
-} from '@cortexkit/antigravity-auth-core'
-import type { SettingsHandle } from '@cortexkit/antigravity-auth-core/common-auth/settings'
+} from '@inhyoe/antigravity-auth-core'
+import type { SettingsHandle } from '@inhyoe/antigravity-auth-core/common-auth/settings'
 import type {
   AccountModels,
   AppliedProtection,
   ModelAccessPolicy,
   ProtectionStore,
   ResolvedProtection,
-} from '@cortexkit/antigravity-auth-core/settings'
+} from '@inhyoe/antigravity-auth-core/settings'
 
 type SettingsModule =
-  typeof import('@cortexkit/antigravity-auth-core/common-auth/settings')
-type PolicyModule = typeof import('@cortexkit/antigravity-auth-core/settings')
+  typeof import('@inhyoe/antigravity-auth-core/common-auth/settings')
+type PolicyModule = typeof import('@inhyoe/antigravity-auth-core/settings')
 
 /** The vault-mode refusal for a model the serving account's list forbids. */
 export const PI_ACCOUNT_MODELS_REFUSAL =
@@ -85,7 +85,7 @@ export async function piSettingsFile(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<string> {
   const { settingsFilePath } = await import(
-    '@cortexkit/antigravity-auth-core/common-auth/settings'
+    '@inhyoe/antigravity-auth-core/common-auth/settings'
   )
   return settingsFilePath({
     plugin: 'antigravity-auth',
@@ -135,9 +135,9 @@ export function createPiModelAccess(
 
   const open = async (): Promise<OpenSettings> => {
     const settings = await import(
-      '@cortexkit/antigravity-auth-core/common-auth/settings'
+      '@inhyoe/antigravity-auth-core/common-auth/settings'
     )
-    const rules = await import('@cortexkit/antigravity-auth-core/settings')
+    const rules = await import('@inhyoe/antigravity-auth-core/settings')
     const file = options.file ?? (await piSettingsFile())
     const store = rules.createProtectionStore(options.statePath)
     return {

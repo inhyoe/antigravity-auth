@@ -15,11 +15,11 @@ import {
   createAntigravityCommandMenu,
   loadCommonAuthCommands,
   type VaultGrantReach,
-} from '@cortexkit/antigravity-auth-core'
+} from '@inhyoe/antigravity-auth-core'
 import type {
   ItemDefinition,
   PluginExtraSection,
-} from '@cortexkit/antigravity-auth-core/common-auth/commands'
+} from '@inhyoe/antigravity-auth-core/common-auth/commands'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 
 import type { PiModelAccess } from './model-access.ts'

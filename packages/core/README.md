@@ -1,8 +1,10 @@
-# @cortexkit/antigravity-auth-core
+# @inhyoe/antigravity-auth-core
 
 Harness-agnostic core for Google Antigravity OAuth. Shared by the unified OpenCode
 1.x (V1) and 2.x general-availability (GA) server and TUI ([`@cortexkit/opencode-antigravity-auth`](../opencode)) and the Pi
-extension ([`@cortexkit/pi-antigravity-auth`](../pi)).
+extension ([`@inhyoe/pi-antigravity-auth`](../pi)).
+
+This package is published as `@inhyoe/antigravity-auth-core` and adds Gemini 4 Neon (3.1.10). The OpenCode package in this repository still builds against the original `@cortexkit/antigravity-auth-core`.
 
 Provides:
 

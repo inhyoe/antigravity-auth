@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import * as actualCore from '@cortexkit/antigravity-auth-core'
-import type { ClaustrumScopedClient } from '@cortexkit/antigravity-auth-core/common-auth/claustrum'
+import * as actualCore from '@inhyoe/antigravity-auth-core'
+import type { ClaustrumScopedClient } from '@inhyoe/antigravity-auth-core/common-auth/claustrum'
 import {
   type AgentSession,
   createAgentSession,
@@ -32,7 +32,7 @@ const physicalTransport: typeof actualCore.fetchWithAgyCliTransport = async (
     { headers: { 'content-type': 'text/event-stream' } },
   )
 }
-mock.module('@cortexkit/antigravity-auth-core', () => ({
+mock.module('@inhyoe/antigravity-auth-core', () => ({
   ...actualCore,
   refreshAntigravityToken: localRefresh,
   ensureProjectContext: localProject,

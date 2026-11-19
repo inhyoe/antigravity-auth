@@ -7,14 +7,14 @@ import {
   type CommonAuthCommandsModule,
   loadCommonAuthClaustrum,
   loadCommonAuthCommands,
-} from '@cortexkit/antigravity-auth-core'
-import type { ClaustrumScopedClient } from '@cortexkit/antigravity-auth-core/common-auth/claustrum'
+} from '@inhyoe/antigravity-auth-core'
+import type { ClaustrumScopedClient } from '@inhyoe/antigravity-auth-core/common-auth/claustrum'
 import type {
   CommandDialogPayload,
   CommandInvocation,
   CommandMenu,
   PiMenuUi,
-} from '@cortexkit/antigravity-auth-core/common-auth/commands'
+} from '@inhyoe/antigravity-auth-core/common-auth/commands'
 import type { Api, Provider } from '@earendil-works/pi-ai'
 import type {
   ExtensionCommandContext,

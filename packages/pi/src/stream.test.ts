@@ -10,7 +10,7 @@ import {
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import * as actualCore from '@cortexkit/antigravity-auth-core'
+import * as actualCore from '@inhyoe/antigravity-auth-core'
 import {
   type Api,
   type AssistantMessage,
@@ -56,7 +56,7 @@ const fetchWithAgyCliTransportMock = mock()
 let bypassHarnessRewrite = false
 const rewriteHarnessIdentity = actualCore.rewriteHarnessIdentity
 
-mock.module('@cortexkit/antigravity-auth-core', () => ({
+mock.module('@inhyoe/antigravity-auth-core', () => ({
   ...actualCore,
   ensureProjectContext: ensureProjectContextMock,
   fetchWithAgyCliTransport: fetchWithAgyCliTransportMock,
@@ -1041,6 +1041,43 @@ describe('resolvePiAntigravityModel', () => {
         expect(body.request).not.toHaveProperty('toolConfig')
         expect(Object.keys(body)).toEqual(carbonLow.envelope_keys)
       }
+    }
+  })
+
+  it('sends Neon with high default, Hydrogen-style efforts and numeric XHigh', async () => {
+    for (const [effort, tier, thinkingLevel, modelEnum] of [
+      [undefined, 'high', 'HIGH', 'MODEL_PLACEHOLDER_M532'],
+      ['minimal', 'low', 'LOW', 'MODEL_PLACEHOLDER_M534'],
+      ['low', 'low', 'LOW', 'MODEL_PLACEHOLDER_M534'],
+      ['medium', 'medium', 'MEDIUM', 'MODEL_PLACEHOLDER_M533'],
+      ['high', 'high', 'HIGH', 'MODEL_PLACEHOLDER_M532'],
+      ['xhigh', 'xhigh', 100, 'MODEL_PLACEHOLDER_M535'],
+    ] as const) {
+      fetchWithAgyCliTransportMock.mockImplementationOnce(async () =>
+        sseResponse([
+          'data: {"response":{"candidates":[{"content":{"parts":[{"text":"answer"}]},"finishReason":"STOP"}]}}\n\n',
+        ]),
+      )
+      const model = {
+        ...fakeModel('antigravity-gemini-4-neon'),
+        reasoning: true,
+      }
+      const result = await collectStream(
+        streamCortexKitAntigravity(model, userContext(), {
+          apiKey: 'test-token',
+          reasoning: effort,
+          sessionId: `neon-${effort}`,
+        }),
+      )
+      expect(result.result.stopReason).toBe('stop')
+      const call = fetchWithAgyCliTransportMock.mock.calls.at(-1)
+      const body = JSON.parse(String(call?.[1]?.body))
+      expect(body.model).toBe(`gemini-4-neon-${tier}`)
+      expect(body.request.generationConfig).toEqual({
+        maxOutputTokens: 262144,
+        thinkingConfig: { includeThoughts: true, thinkingLevel },
+      })
+      expect(body.request.labels.model_enum).toBe(modelEnum)
     }
   })
 

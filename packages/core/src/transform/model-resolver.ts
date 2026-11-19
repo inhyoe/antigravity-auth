@@ -14,10 +14,12 @@ import {
   getGeminiArgonAntigravityModel,
   getGeminiCarbonAntigravityModel,
   getGeminiHydrogenAntigravityModel,
+  getGeminiNeonAntigravityModel,
   getResolverAliasMap,
   isGeminiArgonModel,
   isGeminiCarbonModel,
   isGeminiHydrogenModel,
+  isGeminiNeonModel,
 } from '../model-registry.ts'
 import type {
   GoogleSearchConfig,
@@ -79,6 +81,7 @@ function supportsThinkingTiers(model: string): boolean {
   return (
     isGeminiArgonModel(lower) ||
     isGeminiCarbonModel(lower) ||
+    isGeminiNeonModel(lower) ||
     lower.includes('gemini-3') ||
     lower.includes('gemini-2.5') ||
     (lower.includes('claude') &&
@@ -181,6 +184,19 @@ export function resolveModelWithTier(requestedModel: string): ResolvedModel {
       .match(HYDROGEN_TIER_REGEX)?.[1] as ThinkingTier | undefined
     return {
       actualModel: getGeminiHydrogenAntigravityModel(tier),
+      thinkingLevel: tier ?? 'high',
+      tier: tier ?? 'high',
+      isThinkingModel: true,
+    }
+  }
+
+  // Neon shares Hydrogen's four tiers (incl. xhigh); default is high.
+  if (isGeminiNeonModel(modelWithoutQuota)) {
+    const tier = modelWithoutQuota
+      .toLowerCase()
+      .match(HYDROGEN_TIER_REGEX)?.[1] as ThinkingTier | undefined
+    return {
+      actualModel: getGeminiNeonAntigravityModel(tier),
       thinkingLevel: tier ?? 'high',
       tier: tier ?? 'high',
       isThinkingModel: true,
@@ -478,11 +494,13 @@ export function resolveModelWithVariant(
     isGeminiArgonModel(base.actualModel) ||
     isGeminiCarbonModel(base.actualModel) ||
     isGeminiHydrogenModel(base.actualModel) ||
+    isGeminiNeonModel(base.actualModel) ||
     getAgyNativeModel(base.actualModel)?.supportsAdaptiveThinking
   ) {
     if (!variantConfig.thinkingLevel) return base
     const family = base.actualModel.replace(
-      isGeminiHydrogenModel(base.actualModel)
+      isGeminiHydrogenModel(base.actualModel) ||
+        isGeminiNeonModel(base.actualModel)
         ? HYDROGEN_TIER_REGEX
         : TIER_REGEX,
       '',

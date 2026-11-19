@@ -14,7 +14,7 @@ import {
   type VaultRoster,
   type VaultRouteRef,
   type VaultSendAdmission,
-} from '@cortexkit/antigravity-auth-core'
+} from '@inhyoe/antigravity-auth-core'
 import { withVaultHost } from '../../../test/support/vault-host.ts'
 import {
   keptReceipts,

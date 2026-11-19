@@ -8,7 +8,7 @@
 
 import { createHash, randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import type { CommonAuthClaustrumModule } from '@cortexkit/antigravity-auth-core'
+import type { CommonAuthClaustrumModule } from '@inhyoe/antigravity-auth-core'
 import {
   ANTIGRAVITY_PROVIDER_ID,
   type EmptyVaultRosterCause,
@@ -22,8 +22,8 @@ import {
   VAULT_STATUS_COMMAND,
   type VaultGrantReach,
   vaultAuthority,
-} from '@cortexkit/antigravity-auth-core'
-import { writeJsonAtomic } from '@cortexkit/antigravity-auth-core/atomic-write'
+} from '@inhyoe/antigravity-auth-core'
+import { writeJsonAtomic } from '@inhyoe/antigravity-auth-core/atomic-write'
 import {
   type ClaustrumEnrollmentConnection,
   type ClaustrumEnrollmentPaths,
@@ -31,13 +31,13 @@ import {
   type HostSlotContent,
   hasVaultHost,
   VAULT_HOST_STATUS,
-} from '@cortexkit/antigravity-auth-core/common-auth/claustrum'
+} from '@inhyoe/antigravity-auth-core/common-auth/claustrum'
 import type {
   ActionDefinition,
   ActionOutcome,
   ItemDefinition,
   PluginExtraSection,
-} from '@cortexkit/antigravity-auth-core/common-auth/commands'
+} from '@inhyoe/antigravity-auth-core/common-auth/commands'
 
 /** Pi's provider id; also the key of its auth slot in Pi's auth.json. */
 export const PI_ANTIGRAVITY_PROVIDER_ID = ANTIGRAVITY_PROVIDER_ID

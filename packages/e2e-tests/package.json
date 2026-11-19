@@ -10,7 +10,7 @@
     "typecheck:ga": "tsc -p tsconfig.ga.json"
   },
   "dependencies": {
-    "@cortexkit/antigravity-auth-core": "workspace:*",
+    "@cortexkit/antigravity-auth-core": "3.1.9",
     "@cortexkit/opencode-antigravity-auth": "workspace:*"
   },
   "devDependencies": {

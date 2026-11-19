@@ -9,8 +9,8 @@ import {
   loadCommonAuthPiSlot,
   refreshAntigravityToken,
   vaultAuthority,
-} from '@cortexkit/antigravity-auth-core'
-import type { PluginExtraSection } from '@cortexkit/antigravity-auth-core/common-auth/commands'
+} from '@inhyoe/antigravity-auth-core'
+import type { PluginExtraSection } from '@inhyoe/antigravity-auth-core/common-auth/commands'
 import type {
   OAuthCredentials,
   OAuthLoginCallbacks,

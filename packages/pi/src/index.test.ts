@@ -9,7 +9,7 @@ import {
   loadCommonAuthPiSlot,
   setLogSink,
   type VaultScopedClient,
-} from '@cortexkit/antigravity-auth-core'
+} from '@inhyoe/antigravity-auth-core'
 import {
   type ExtensionAPI,
   ModelRegistry,

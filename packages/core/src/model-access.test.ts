@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   canonicalModelId,
   compileModelAccess,
-} from '@cortexkit/antigravity-auth-core/settings'
+} from '@inhyoe/antigravity-auth-core/settings'
 
 describe('model access', () => {
   it('canonicalizes all Hydrogen efforts and applies one allowlist entry to all four', () => {

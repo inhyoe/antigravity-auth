@@ -1,13 +1,15 @@
 # @inhyoe/pi-antigravity-auth
 
-> **Fork of [`@cortexkit/pi-antigravity-auth`](https://www.npmjs.com/package/@cortexkit/pi-antigravity-auth) 3.1.2.**
-> Source: [inhyoe/antigravity-auth](https://github.com/inhyoe/antigravity-auth) (`packages/pi`).
-> The "Fork changes" section lists what this fork changes. The rest of this README is the upstream text, except the package name in Install.
+> Source: [inhyoe/antigravity-auth](https://github.com/inhyoe/antigravity-auth) (`packages/pi`), maintained independently since 3.1.10.
+> Originally derived from cortexkit/antigravity-auth 3.1.9 (MIT, see LICENSE). It uses its own core package, [`@inhyoe/antigravity-auth-core`](../core).
+> The "Changes" section lists what differs from the original. The rest of this README is the original text, except package names.
 
-## Fork changes
+## Changes
 
 | Change | What it does | Commit |
 | --- | --- | --- |
+| Gemini 4 Neon | Adds `antigravity-gemini-4-neon` with low, medium, high (default) and xhigh. Route enums come from the account's `fetchAvailableModels` catalog (19 Nov 2026). | 3.1.10 |
+| Own core package | Depends on `@inhyoe/antigravity-auth-core` (this repository's `packages/core`) instead of `@cortexkit/antigravity-auth-core`. | 3.1.10 |
 | Relocate system instructions | Pi's system prompt moves into the first user turn, merged into its first text part. `systemInstruction` keeps only `You are a coding agent.` | `48f861a` |
 | Neutralize default prompt phrase | The sentence "Help users inspect files, run commands, and modify code." is reworded before sending. | `48f861a` |
 | Package scope | Published as `@inhyoe/pi-antigravity-auth`, so `pi update` keeps these patches. | `48f861a` |
@@ -136,7 +138,7 @@ If a request or startup refusal points to the plugin log, start Pi with `ANTIGRA
 
 This package shares its transport, OAuth, fingerprint, and request-transform
 logic with the unified OpenCode V1/GA plugin via
-[`@cortexkit/antigravity-auth-core`](../core). Local mode uses one account in Pi's
+[`@inhyoe/antigravity-auth-core`](../core). Local mode uses one account in Pi's
 native `google` OAuth slot (`auth.json` in Pi's agent directory). Vault mode can
 list/select approved vault accounts, but serves one at a time; Pi has no local
 pool rotation, recorded quota gating, killswitch, or operator settings.

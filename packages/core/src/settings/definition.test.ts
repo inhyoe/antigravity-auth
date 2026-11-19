@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   ANTIGRAVITY_SETTINGS,
   RETIRED_SETTINGS,
-} from '@cortexkit/antigravity-auth-core/settings'
+} from '@inhyoe/antigravity-auth-core/settings'
 
 describe('settings declaration', () => {
   it('loads a frozen antigravity-auth declaration with no sidebar or retired keys', () => {
