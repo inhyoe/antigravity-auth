@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-
+import type { Api, Provider } from '@earendil-works/pi-ai'
+import type {
+  ExtensionCommandContext,
+  ProviderConfig,
+  RegisteredCommand,
+} from '@earendil-works/pi-coding-agent'
 import {
   type CommonAuthCommandsModule,
   loadCommonAuthClaustrum,
@@ -15,12 +20,6 @@ import type {
   CommandMenu,
   PiMenuUi,
 } from '@inhyoe/antigravity-auth-core/common-auth/commands'
-import type { Api, Provider } from '@earendil-works/pi-ai'
-import type {
-  ExtensionCommandContext,
-  ProviderConfig,
-  RegisteredCommand,
-} from '@earendil-works/pi-coding-agent'
 
 import { registerCortexKitPiAntigravity } from './index.ts'
 import { PiVaultSetup } from './vault-setup.ts'

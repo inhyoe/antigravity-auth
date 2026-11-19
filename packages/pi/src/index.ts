@@ -1,4 +1,14 @@
 import { join } from 'node:path'
+import type {
+  OAuthCredentials,
+  OAuthLoginCallbacks,
+} from '@earendil-works/pi-ai'
+import {
+  type ExtensionAPI,
+  getAgentDir,
+  type ProviderConfig,
+  readStoredCredential,
+} from '@earendil-works/pi-coding-agent'
 import {
   ANTIGRAVITY_PROVIDER_ID,
   authorizeAntigravity,
@@ -11,16 +21,6 @@ import {
   vaultAuthority,
 } from '@inhyoe/antigravity-auth-core'
 import type { PluginExtraSection } from '@inhyoe/antigravity-auth-core/common-auth/commands'
-import type {
-  OAuthCredentials,
-  OAuthLoginCallbacks,
-} from '@earendil-works/pi-ai'
-import {
-  type ExtensionAPI,
-  getAgentDir,
-  type ProviderConfig,
-  readStoredCredential,
-} from '@earendil-works/pi-coding-agent'
 
 import {
   createPiAntigravityAccountSections,

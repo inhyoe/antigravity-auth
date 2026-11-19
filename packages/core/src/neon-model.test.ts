@@ -29,14 +29,14 @@ describe('Gemini 4 Neon', () => {
         isThinkingModel: true,
       })
       for (const tier of ['low', 'medium', 'high', 'xhigh'] as const) {
-        expect(resolveModelWithTier(`${prefix}gemini-4-neon-${tier}`)).toMatchObject(
-          {
-            actualModel: `gemini-4-neon-${tier}`,
-            thinkingLevel: tier,
-            tier,
-            isThinkingModel: true,
-          },
-        )
+        expect(
+          resolveModelWithTier(`${prefix}gemini-4-neon-${tier}`),
+        ).toMatchObject({
+          actualModel: `gemini-4-neon-${tier}`,
+          thinkingLevel: tier,
+          tier,
+          isThinkingModel: true,
+        })
         for (const source of ['low', 'medium', 'high', 'xhigh']) {
           expect(
             resolveModelWithVariant(`${prefix}gemini-4-neon-${source}`, {
@@ -78,7 +78,9 @@ describe('Gemini 4 Neon', () => {
   })
 
   it('publishes the Neon selector with exactly four effort variants', () => {
-    expect(getAntigravityOpencodeModelIds()).toContain('antigravity-gemini-4-neon')
+    expect(getAntigravityOpencodeModelIds()).toContain(
+      'antigravity-gemini-4-neon',
+    )
     const model = getPublicModelDefinitions()['antigravity-gemini-4-neon']
     expect(model).toMatchObject({
       name: 'Gemini 4 Neon (Antigravity)',

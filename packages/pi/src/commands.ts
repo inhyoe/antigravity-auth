@@ -6,6 +6,7 @@
  * invocation, and every invocation builds a fresh menu.
  */
 
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import {
   ANTIGRAVITY_MENU_COMMAND,
   type AntigravityMenuSections,
@@ -20,7 +21,6 @@ import type {
   ItemDefinition,
   PluginExtraSection,
 } from '@inhyoe/antigravity-auth-core/common-auth/commands'
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 
 import type { PiModelAccess } from './model-access.ts'
 import {

@@ -1,4 +1,20 @@
 import {
+  type Api,
+  type AssistantMessage,
+  type AssistantMessageEventStream,
+  type Context,
+  calculateCost,
+  createAssistantMessageEventStream,
+  type JsonObject,
+  type Model,
+  type SimpleStreamOptions,
+  type StopReason,
+  type TextContent,
+  type ThinkingContent,
+  type ThinkingLevel,
+  type ToolCall,
+} from '@earendil-works/pi-ai'
+import {
   type AgyRequestScope,
   AgyRequestSessionStore,
   ANTIGRAVITY_ENDPOINT,
@@ -29,22 +45,6 @@ import {
   resolveAntigravityModel,
   UNCONFIRMED_RATE_LIMIT_MESSAGE,
 } from '@inhyoe/antigravity-auth-core'
-import {
-  type Api,
-  type AssistantMessage,
-  type AssistantMessageEventStream,
-  type Context,
-  calculateCost,
-  createAssistantMessageEventStream,
-  type JsonObject,
-  type Model,
-  type SimpleStreamOptions,
-  type StopReason,
-  type TextContent,
-  type ThinkingContent,
-  type ThinkingLevel,
-  type ToolCall,
-} from '@earendil-works/pi-ai'
 
 import { buildGeminiRequest } from './convert.ts'
 import { getPackedRefresh } from './credential-cache.ts'

@@ -1,7 +1,3 @@
-import {
-  rewriteHarnessIdentity,
-  toGeminiSchema,
-} from '@inhyoe/antigravity-auth-core'
 import type {
   AssistantMessage,
   Context,
@@ -15,6 +11,10 @@ import type {
 // import of an export that an older installed pi-ai lacks fails at module link
 // time and would stop the extension from loading at all.
 import * as piAi from '@earendil-works/pi-ai'
+import {
+  rewriteHarnessIdentity,
+  toGeminiSchema,
+} from '@inhyoe/antigravity-auth-core'
 
 /** Gemini `contents` part shapes. */
 type GeminiPart =

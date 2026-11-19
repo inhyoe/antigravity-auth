@@ -4,13 +4,13 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import * as actualCore from '@inhyoe/antigravity-auth-core'
-import type { ClaustrumScopedClient } from '@inhyoe/antigravity-auth-core/common-auth/claustrum'
 import {
   type AgentSession,
   createAgentSession,
   SessionManager,
 } from '@earendil-works/pi-coding-agent'
+import * as actualCore from '@inhyoe/antigravity-auth-core'
+import type { ClaustrumScopedClient } from '@inhyoe/antigravity-auth-core/common-auth/claustrum'
 import { PI_ANTIGRAVITY_ENROLLMENT_NAME, PiVaultSetup } from './vault-setup.ts'
 
 const bearer = 'synthetic-native-request-vault-token'

@@ -10,7 +10,6 @@ import {
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import * as actualCore from '@inhyoe/antigravity-auth-core'
 import {
   type Api,
   type AssistantMessage,
@@ -22,6 +21,7 @@ import {
 } from '@earendil-works/pi-ai'
 import type { ProviderConfig } from '@earendil-works/pi-coding-agent'
 import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent'
+import * as actualCore from '@inhyoe/antigravity-auth-core'
 import {
   hostFileError,
   hostFileErrorKinds,

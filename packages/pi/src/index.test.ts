@@ -4,18 +4,18 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  type ExtensionAPI,
+  ModelRegistry,
+  ModelRuntime,
+  type ProviderConfig,
+} from '@earendil-works/pi-coding-agent'
+import {
   loadCommonAuthClaustrum,
   loadCommonAuthFs,
   loadCommonAuthPiSlot,
   setLogSink,
   type VaultScopedClient,
 } from '@inhyoe/antigravity-auth-core'
-import {
-  type ExtensionAPI,
-  ModelRegistry,
-  ModelRuntime,
-  type ProviderConfig,
-} from '@earendil-works/pi-coding-agent'
 import {
   hostFileError,
   hostFileErrorKinds,
