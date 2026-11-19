@@ -132,7 +132,7 @@
   "dependencies": {
     "@cortexkit/claustrum-client": "0.18.0",
     "@cortexkit/subc-client": "0.24.0",
-    "@cortexkit/antigravity-auth-core": "workspace:@inhyoe/antigravity-auth-core@*",
+    "@cortexkit/antigravity-auth-core": "3.1.9",
     "@cortexkit/private-files": "0.2.2",
     "jsonc-parser": "^3.3.1",
     "xdg-basedir": "^5.1.0",

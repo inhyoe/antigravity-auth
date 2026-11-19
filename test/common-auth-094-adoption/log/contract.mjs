@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -18,6 +19,17 @@ import ts from 'typescript'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 const source = join(root, 'packages/opencode/src')
+// The core copy OpenCode itself resolves: the workspace core when linked, or
+// the pinned published core. Bridging must hold for the copy OpenCode loads.
+const coreEntry = join(
+  realpathSync(
+    join(
+      root,
+      'packages/opencode/node_modules/@cortexkit/antigravity-auth-core',
+    ),
+  ),
+  'dist/index.js',
+)
 const suffix = process.versions.bun ? 'ts' : 'js'
 let nodeRuntime
 async function load(path) {
@@ -60,8 +72,7 @@ async function load(path) {
               builder.onResolve(
                 { filter: /^@cortexkit\/antigravity-auth-core$/ },
                 () => ({
-                  path: pathToFileURL(join(root, 'packages/core/dist/index.js'))
-                    .href,
+                  path: pathToFileURL(coreEntry).href,
                   external: true,
                 }),
               )
@@ -125,9 +136,7 @@ async function fixture(run) {
     debug = await load(`plugin/debug.${suffix}`)
     config = await load(`plugin/config/index.${suffix}`)
     const tui = await load(`tui/file-logger.${suffix}`)
-    const core = await import(
-      pathToFileURL(join(root, 'packages/core/dist/index.js')).href
-    )
+    const core = await import(pathToFileURL(coreEntry).href)
     const received = []
     const early = provider.createLogger('early-channel')
     const client = {

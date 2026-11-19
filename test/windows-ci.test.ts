@@ -1,7 +1,15 @@
 import { afterEach, expect, test } from 'bun:test'
 import { execFile } from 'node:child_process'
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { BUNDLE_EXTERNALS } from '../packages/opencode/scripts/build-tui.ts'
@@ -99,8 +107,19 @@ for (const job of ['vault', 'migration']) {
       const meta = JSON.parse(await readFile(metafile, 'utf8'))
       if (job === 'vault') {
         const map = JSON.parse(await readFile(`${bundle}.map`, 'utf8'))
+        // Expect the enrollment module from the core copy OpenCode resolves
+        // (the workspace core when linked, or the pinned published core).
+        const core = await realpath(
+          join(
+            root,
+            'packages/opencode/node_modules/@cortexkit/antigravity-auth-core',
+          ),
+        )
         expect(map.sources).toContain(
-          '../../core/dist/common-auth-embedded/claustrum/enrollment.js',
+          relative(
+            dirname(bundle),
+            join(core, 'dist/common-auth-embedded/claustrum/enrollment.js'),
+          ).replaceAll('\\', '/'),
         )
       }
       expect(

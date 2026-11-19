@@ -54,7 +54,7 @@
         "antigravity-auth": "./dist/cli.js",
       },
       "dependencies": {
-        "@cortexkit/antigravity-auth-core": "workspace:@inhyoe/antigravity-auth-core@*",
+        "@cortexkit/antigravity-auth-core": "3.1.9",
         "@cortexkit/claustrum-client": "0.18.0",
         "@cortexkit/private-files": "0.2.2",
         "@cortexkit/subc-client": "0.24.0",
@@ -1178,6 +1178,8 @@
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
     "@babel/helper-create-class-features-plugin/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
+
+    "@cortexkit/opencode-antigravity-auth/@cortexkit/antigravity-auth-core": ["@cortexkit/antigravity-auth-core@3.1.9", "", { "dependencies": { "@cortexkit/claustrum-client": "0.18.0", "@cortexkit/private-files": "0.2.2", "@cortexkit/subc-client": "0.24.0", "jsonc-parser": "^3.3.1", "xdg-basedir": "^5.1.0", "zod": "^4.0.0" } }, "sha512-LbKSRvU3KE2rjtYDHpdE7uB0XMa10hJ4O1WsfTQa9MTWFc7Adc+XkWbG9Q19ayJl0pAIld41rXQAoAgi5vDYIw=="],
 
     "@cortexkit/opencode-antigravity-auth/@types/node": ["@types/node@25.0.0", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-rl78HwuZlaDIUSeUKkmogkhebA+8K1Hy7tddZuJ3D0xV8pZSfsYGTsliGUol1JPzu9EKnTxPC4L1fiWouStRew=="],
 
