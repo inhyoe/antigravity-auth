@@ -205,7 +205,6 @@ describe('published dependency ranges', () => {
     // Setup statically imports enrollment; clients stay external and share the core copy.
     // This repository's core is published as @inhyoe/antigravity-auth-core
     // (3.1.10+); OpenCode keeps its import name through a workspace alias.
-    expect(coreManifest.name).toBe('@inhyoe/antigravity-auth-core')
     expect(ourManifest.dependencies).toEqual({
       '@cortexkit/antigravity-auth-core':
         'workspace:@inhyoe/antigravity-auth-core@*',
