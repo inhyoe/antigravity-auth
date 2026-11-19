@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+## [3.1.9] - 2026-11-18
+
+- Ask vault routing on the first model request in each session and model family, including generate and compaction requests. Titles don't set or move the session's account, routing's choice survives roster reordering, and proactive account switching stays off while routing is available.
+- Keep local store paths and internal error details in the plugin log, not in OpenCode or Pi model-call errors.
+- Send vault routing the eligible account list and honor its pick despite local cooldowns. Ask routing before switching when a dated quota window shows zero or Google says the account is ineligible or needs verification. After a rate limit without that quota evidence, wait on the same account within the retry budget.
+- Embed published common-auth 0.55.0, which adds routing's continue question and the signed-out report.
+
+## [3.1.8] - 2026-11-18
+
+- Embed published common-auth 0.53.0: while Pi uses the vault, it no longer keeps a copy of its own Google login, and any old saved copy is deleted. Leaving vault mode removes the vault marker and asks you to sign in again with `/login google`, and a leftover vault marker is never sent to Google as a login.
+- Embed published common-auth 0.52.1, including safe vault-unreachable messages and stale RPC port cleanup at startup.
+- Keep diagnostic error codes out of runtime-layout refusal messages so OpenCode does not mistake them for retry hints; retain the codes in the plugin log.
+
+## [3.1.7] - 2026-11-17
+
+- Troubleshooting explains that on OpenCode 2.3 a Google sign-in picked right after start can lack the plugin's methods, and how to get them back.
+- The OpenCode 2 end-to-end test waits for the plugin to load before reading OpenCode's sign-in list, as OpenCode 2.3's own CLI does.
+- Tell OpenCode 2 not to replay failed Antigravity bridge requests, including buffered generations that bypass the retry hook.
+- Rewrite Pi and Pi-Bolt's stock system-prompt opener to the shorter coding-assistant identity accepted by Antigravity ([#76](https://github.com/cortexkit/antigravity-auth/issues/76)).
+- Remove only the codemode clause from Pi's stock docs bullet in outgoing system prompts to avoid Antigravity's false quota refusal, preserving its other documentation pointers.
+- Keep plugin refusal messages from triggering OpenCode's automatic retries, including requests Antigravity refuses without a stated reason.
+
+## [3.1.5] - 2026-11-16
+
+- Convert multi-type Gemini tool parameters to compatible unions instead of sending rejected type arrays, including tools accepting every JSON type in OpenCode and Pi.
+- Discard cached vault quota readings when a login's route or credential changes, so a replacement login cannot inherit the previous login's quota waits.
+- Update the bundled common-auth to 0.52.0: setup's Windows process check starts PowerShell by its full system path and prefers PowerShell 7.
+
+## [3.1.4] - 2026-11-16
+
+- Rewrite OpenCode 2.3's “running in” host identity wording while preserving non-identity mentions and paths.
+- Normalize OpenCode Code Mode namespace references in system prompts (thanks to Will, [#75](https://github.com/cortexkit/antigravity-auth/pull/75)).
+- Treat message-only request limits as unconfirmed in OpenCode and Pi instead of inferring quota exhaustion from their wording; OpenCode keeps a long wait only when a recent quota reading for the selected account and model shows no available quota.
+- Report the newest failure when a request fails on several accounts or endpoints, instead of an older retained 429 (thanks to Marcos Santanna, [#72](https://github.com/cortexkit/antigravity-auth/pull/72)).
+- Embed published common-auth 0.50.0; no plugin behaviour changes.
+
 ## [3.1.2] - 2026-11-14
 
 - Neutralise OpenCode and Pi harness self-identification only in outgoing system instructions so Google does not mistake the host's prompt for a quota failure (#70). Unconfirmed request limits now use a short model-specific cooldown and stop after two retries instead of stalling the turn.

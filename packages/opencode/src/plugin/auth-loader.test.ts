@@ -9,6 +9,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  AccountStoreBusyError,
   type AccountTokenExchange,
   AccountManager as CoreAccountManager,
   createAccountRepositoryFactory,
@@ -16,15 +17,21 @@ import {
   initializeFreshAccountStore,
   loadCommonAuthClaustrum,
   loadCommonAuthStoreModules,
+  setLogSink,
   vaultAuthority,
 } from '@cortexkit/antigravity-auth-core'
 import { createOpencodeClient } from '@opencode-ai/sdk'
+import {
+  hostFileError,
+  hostFileErrorKinds,
+  retryHintPath,
+} from '../../../../test/support/host-file-errors.test.ts'
 import {
   createVaultHostRelay,
   emptyVaultHostClient,
   withVaultHost,
 } from '../../../../test/support/vault-host.ts'
-
+import { expectNoOpenCodeRetryHints } from './__fixtures__/opencode-retry-hints.test'
 import { AccountManager } from './accounts'
 import { createAuthLoader } from './auth-loader'
 import { DEFAULT_CONFIG } from './config'
@@ -108,6 +115,108 @@ const poolFileOnly = async () =>
   ({ status: 'initialization-required' }) as const
 
 describe('createAuthLoader', () => {
+  it.each(
+    hostFileErrorKinds,
+  )('keeps a startup %s error out of the host refusal', async (kind) => {
+    const error = await hostFileError(kind)
+    const { lifecycle } = createLifecycle()
+    const logs: unknown[] = []
+    const loader = createAuthLoader({
+      client: { tui: { showToast: mock(async () => {}) } } as never,
+      providerId: 'google',
+      config: DEFAULT_CONFIG,
+      lifecycle,
+      createFetch: () => {
+        throw new Error('not used')
+      },
+      dependencies: {
+        openAccountStore: async () => {
+          throw error
+        },
+      },
+    })
+    setLogSink((record) => logs.push(record))
+    try {
+      const refusal = await loader(
+        async () => ({
+          type: 'oauth',
+          refresh: 'test-refresh',
+          access: '',
+          expires: 0,
+        }),
+        { models: {} } as Provider,
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+      expect(refusal).toBeInstanceOf(Error)
+      expectNoOpenCodeRetryHints(String(refusal))
+      expect(String(refusal)).not.toContain('x.json')
+      expect(
+        logs.filter((record) => JSON.stringify(record).includes(retryHintPath)),
+      ).toHaveLength(1)
+    } finally {
+      setLogSink(null)
+      await lifecycle.dispose()
+    }
+  })
+
+  it.each(
+    hostFileErrorKinds,
+  )('keeps a V1 authority reload %s error out of the host rejection', async (kind) => {
+    const error = await hostFileError(kind)
+    const { lifecycle } = createLifecycle()
+    const logs: string[] = []
+    let authority: EnrollmentAuthority = 'vault'
+    const loader = createAuthLoader({
+      client: { tui: { showToast: mock(async () => {}) } } as never,
+      providerId: 'google',
+      config: DEFAULT_CONFIG,
+      lifecycle,
+      readAuthority: async () => authority,
+      createFetch: () => {
+        throw new Error('not used')
+      },
+      dependencies: {
+        openAccountStore: async () => {
+          throw error
+        },
+      },
+    })
+    setLogSink((record) => logs.push(record.message))
+    try {
+      const loaded = await loader(
+        async () => ({
+          type: 'oauth',
+          refresh: 'test-refresh',
+          access: '',
+          expires: 0,
+        }),
+        { models: {} } as Provider,
+      )
+      if (typeof loaded.fetch !== 'function')
+        throw new Error('no delegating fetch')
+      authority = 'local'
+      const rejection = await loaded
+        .fetch(
+          'https://generativelanguage.googleapis.com/v1/models/test:streamGenerateContent',
+        )
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        )
+      expect(rejection).toBeInstanceOf(Error)
+      expectNoOpenCodeRetryHints(String(rejection))
+      expect(String(rejection)).not.toContain('x.json')
+      expect(
+        logs.filter((entry) => entry.includes(retryHintPath)),
+      ).toHaveLength(1)
+    } finally {
+      setLogSink(null)
+      await lifecycle.dispose()
+    }
+  })
+
   it('keeps an unmigrated local target unavailable with default producers, preserves passthrough and cancellation, and delegates fresh vault authority', async () => {
     const { lifecycle, replacements } = createOwnedLifecycle()
     const loadAccounts = mock(async () => storedAccounts())
@@ -1380,13 +1489,56 @@ describe('createAuthLoader on the account store', () => {
         })) as never,
         provider,
       ),
-    ).rejects.toThrow('finish the interrupted operation')
+    ).rejects.toThrow('An account clear or pool replacement was interrupted')
     expect(loadAccounts).not.toHaveBeenCalled()
     expect(clearAccounts).not.toHaveBeenCalled()
     expect(replacements).toEqual([])
     expect(
       loader.usesPoolFile({ status: 'migration-required', message: '' }),
     ).toBe(false)
+  })
+
+  it('refuses a busy account store before creating an upstream request path', async () => {
+    const busy = new AccountStoreBusyError()
+    const upstream = mock(async () => new Response())
+    const createFetch = mock(() => ({
+      fetch: upstream,
+      async retire() {},
+      dispose() {},
+    }))
+    const loadAccounts = mock(async () => null)
+    const { lifecycle, replacements } = createLifecycle()
+    const loader = createAuthLoader({
+      client: { tui: { showToast: mock(async () => {}) } } as never,
+      providerId: 'google',
+      config: DEFAULT_CONFIG,
+      lifecycle,
+      createFetch,
+      dependencies: {
+        openAccountStore: async () => ({
+          status: 'refused',
+          admission: { status: 'busy', retryable: true },
+          message: busy.message,
+        }),
+        loadAccounts,
+      },
+    })
+    await expect(
+      loader(
+        mock(async () => ({
+          type: 'oauth',
+          refresh: 'host-refresh',
+          access: '',
+          expires: 0,
+        })) as never,
+        provider,
+      ),
+    ).rejects.toThrow(busy.message)
+    expect(busy.retryable).toBe(true)
+    expect(createFetch).not.toHaveBeenCalled()
+    expect(upstream).not.toHaveBeenCalled()
+    expect(loadAccounts).not.toHaveBeenCalled()
+    expect(replacements).toEqual([])
   })
 
   it('refuses to start while a migration is pending, without falling back to the pool file', async () => {
@@ -1426,7 +1578,7 @@ describe('createAuthLoader on the account store', () => {
         })) as never,
         provider,
       ),
-    ).rejects.toThrow('finish the migration offline')
+    ).rejects.toThrow('An account-store migration is pending')
     expect(loadAccounts).not.toHaveBeenCalled()
     expect(replacements).toEqual([])
     expect(showToast).toHaveBeenCalled()

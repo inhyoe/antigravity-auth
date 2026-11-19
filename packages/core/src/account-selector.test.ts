@@ -62,6 +62,25 @@ describe('issue69 dated quota evidence', () => {
     }
   }
 
+  it('unconfirmed refusals never shorten an existing longer mark', () => {
+    const { pool, row } = manager()
+    pool.markRateLimitedWithReason(
+      row,
+      'gemini',
+      model,
+      'QUOTA_EXHAUSTED',
+      long,
+    )
+    const prior = { ...row.rateLimitResetTimes }
+    const written = { ...row.rateLimitWrittenAt }
+    expect(
+      pool.markRateLimitedWithReason(row, 'gemini', model, 'UNKNOWN'),
+    ).toBe(5000)
+    expect(row.rateLimitResetTimes).toEqual(prior)
+    expect(row.rateLimitWrittenAt).toEqual(written)
+    expect(row.consecutiveFailures).toBe(1)
+  })
+
   it('unconfirmed refusals cool only the family/model key without escalating failures', () => {
     const { pool, row } = manager()
     row.consecutiveFailures = 4
@@ -1207,6 +1226,35 @@ describe('AccountSelector membership', () => {
       throw new Error('three rows expected')
     }
     return { selector, stale, reported, a, b, c }
+  }
+
+  for (const strategy of ['sticky', 'round-robin', 'hybrid'] as const) {
+    it(`${strategy} selection without pinning cannot create or replace a pin`, () => {
+      const { selector, a, b, c } = vaultPool()
+      const initialGlobal = selector.getCurrentAccountForFamily('gemini')
+      const selectWithoutPin = (excludeIndexes?: Set<number>) =>
+        selector.getCurrentOrNextForFamily(
+          'gemini',
+          undefined,
+          strategy,
+          true,
+          undefined,
+          undefined,
+          session,
+          excludeIndexes,
+          false,
+        )
+
+      const onlyB = new Set([a.index, c.index])
+      expect(selectWithoutPin(onlyB)).toBe(b)
+      expect(selector.getCurrentAccountForFamily('gemini', session)).toBeNull()
+      expect(selector.getCurrentAccountForFamily('gemini')).toBe(initialGlobal)
+      selector.markSwitched(a, 'rotation', 'gemini', session)
+      expect(selectWithoutPin()).toBe(a)
+      expect(selectWithoutPin(onlyB)).toBe(b)
+      expect(selector.getCurrentAccountForFamily('gemini', session)).toBe(a)
+      expect(selector.getCurrentAccountForFamily('gemini')).toBe(a)
+    })
   }
 
   it('keeps a vault row, its pins and trackers while route, credential and account match', () => {

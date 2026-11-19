@@ -204,7 +204,12 @@ export interface ManagedAccount extends SelectableAccount {
  * the token produces a durable, prunable identity to detect stale cached
  * quota after an account-index shift.
  */
-function quotaAccountIdentity(refreshToken: string): string {
+/**
+ * Opaque identity stamped on a cached quota reading: the first 16 hex digits of
+ * the refresh token's SHA-256. A reading only describes the account whose token
+ * produced it, so callers compare stamps before trusting a cached reading.
+ */
+export function quotaAccountIdentity(refreshToken: string): string {
   return createHash('sha256').update(refreshToken).digest('hex').slice(0, 16)
 }
 
@@ -1372,6 +1377,29 @@ export class AccountManager {
     return this.selection.getCurrentAccountForFamily(family, identity)
   }
 
+  getRoutedAccountForFamily(
+    family: ModelFamily,
+    identity: AccountSessionIdentity,
+  ): ManagedAccount | null {
+    return this.selection.getRoutedAccountForFamily(family, identity)
+  }
+
+  useRoutedAccount(
+    account: ManagedAccount,
+    family: ModelFamily,
+    model: string | undefined,
+    identity: AccountSessionIdentity,
+    pinSelection: boolean,
+  ): ManagedAccount | null {
+    return this.selection.useRoutedAccount(
+      account,
+      family,
+      model,
+      identity,
+      pinSelection,
+    )
+  }
+
   /**
    * Numeric active indexes for each model family. Exposed so callers
    * that persist `activeIndexByFamily` (e.g. command-data's remove
@@ -1422,6 +1450,7 @@ export class AccountManager {
      * wait path.
      */
     excludeIndexes?: Set<number>,
+    pinSelection = true,
   ): ManagedAccount | null {
     return this.selection.getCurrentOrNextForFamily(
       family,
@@ -1432,6 +1461,7 @@ export class AccountManager {
       softQuotaCacheTtlMs,
       identity,
       excludeIndexes,
+      pinSelection,
     )
   }
 

@@ -24,10 +24,14 @@ import {
   type FetchAvailableModelsOptions,
   fetchWithAgyCliTransport,
   getPublicModelDefinitions,
+  HostRefusalError,
+  hostFailure,
   isRetiredAgyModel,
+  isUpstreamFailure,
   loadCommonAuthClaustrum,
   loadCommonAuthCommands,
   type loadManagedProject,
+  markUpstreamFailure,
   type OpencodeModelDefinition,
   redactProjectIdText,
   type refreshAntigravityToken,
@@ -54,6 +58,7 @@ import {
   normalizeResetDuration,
   resolveRetryMetadata,
 } from '../../plugin/request-helpers.ts'
+import { openCodeRetryHint } from '../../plugin/shared/opencode-retry-hints.ts'
 import {
   createLocationRuntime,
   type LocationRuntime,
@@ -66,6 +71,7 @@ import type {
   CommandApplyResult,
   RpcNotificationPayload,
 } from '../../rpc/protocol.ts'
+import { RuntimeLayoutRefusal } from '../../runtime-layout.ts'
 import {
   redactAccountForSidebar,
   type SidebarAccountRedactionInput,
@@ -75,6 +81,7 @@ import { prepareVaultFolder } from '../../vault-folder.ts'
 import {
   assertLoopbackProxyGuard,
   type LoopbackProxyEnv,
+  LoopbackProxyGuardError,
 } from '../proxy-guard.ts'
 import {
   ANTIGRAVITY_MENU_COMMAND_NAME,
@@ -373,7 +380,7 @@ export interface GaJobContext {
  * Runs one job: request transformation, account selection, retries and the
  * response adaptation to native Gemini SSE or JSON. The shared request
  * pipeline provides it. A thrown error before a Response exists becomes an
- * HTTP 502 answer; a Response is streamed back unchanged.
+ * HTTP 502 answer; a Response body is streamed back unchanged.
  */
 export type GaJobExecutor = (
   job: GaBridgeJob,
@@ -425,7 +432,11 @@ export interface GaLoopbackBridgeOptions {
 }
 
 /** The HTTP error answer for a terminal failure before upstream headers. */
-export function gaPreHeaderFailureResponse(error: unknown): Response {
+export function gaPreHeaderFailureResponse(
+  error: unknown,
+  report: (diagnostic: string) => void = (message) =>
+    stderrLogSink({ service: 'bridge', level: 'warn', message }),
+): Response {
   const err = error as Record<string, unknown> | null
 
   // Validate numeric status code: only accept finite safe integers in valid HTTP ranges
@@ -490,10 +501,13 @@ export function gaPreHeaderFailureResponse(error: unknown): Response {
         ? err.message
         : 'Antigravity request failed before a response arrived'
 
-  const redacted = redactProjectIdText(rawMessage)
-  // Only normalize duration wording if classified as quota; never turn 400 "Session resets in 5m" into quota
-  const isQuota = isQuotaError(status, rawMessage, err?.details)
-  const message = isQuota ? normalizeResetDuration(redacted) : redacted
+  let message = gaHostFailure(error, report).message
+  if (isUpstreamFailure(error)) {
+    const redacted = redactProjectIdText(rawMessage)
+    message = isQuotaError(status, rawMessage, err?.details)
+      ? normalizeResetDuration(redacted)
+      : redacted
+  }
 
   const headers = new Headers({ 'content-type': 'application/json' })
 
@@ -520,6 +534,8 @@ export function gaPreHeaderFailureResponse(error: unknown): Response {
     headers.set('retry-after-ms', pair['retry-after-ms'])
   }
 
+  // Keep the Google RPC code and status as protocol metadata. OpenCode 2
+  // uses the HTTP status and the bridge's x-should-retry veto, not this text.
   return new Response(
     JSON.stringify({
       error: {
@@ -653,14 +669,20 @@ export async function startGaLoopbackBridge(
       try {
         upstream = await options.execute(entry.job, {
           signal: controller.signal,
-          send: options.send,
+          send: async (...args) => {
+            try {
+              return await options.send(...args)
+            } catch (error) {
+              throw markUpstreamFailure(error)
+            }
+          },
           onResponseHandoff: (callback) => {
             acknowledge = callback
           },
         })
       } catch (error) {
         acknowledge = undefined
-        upstream = gaPreHeaderFailureResponse(error)
+        upstream = gaPreHeaderFailureResponse(error, report)
       }
       await pipeResponse(
         upstream,
@@ -886,6 +908,9 @@ async function pipeResponse(
     return
   }
   const extraHeaders = collectForwardedHeaders(upstream.headers)
+  // Only owned requests become bridge jobs. The executor has already handled
+  // retries; OpenCode's session.generate retry loop skips the retry hook.
+  if (upstream.status >= 400) extraHeaders['x-should-retry'] = 'false'
   writeResponseHead(response, upstream.status, contentType, extraHeaders)
   response.flushHeaders()
   onHandoff()
@@ -923,6 +948,8 @@ async function pipeResponse(
     }
   } catch (caught) {
     const error = caught instanceof Error ? caught : new Error(String(caught))
+    // Headers are already sent, so a cut-off success cannot gain the failure-only
+    // x-should-retry header. OpenCode's session.generate may still retry that read.
     // The captured upstream body error is recorded before the loopback body
     // ends, so the job's `http.response` hook adapter (`adaptResponse`) finds
     // it when the host reads the end of the body and fails the read with it.
@@ -1706,10 +1733,10 @@ export async function rewriteGaHttpRequest(
   if (!owned) return
   const original = event.request
   if (!isGaGoogleContentRequest(original)) {
-    throw new Error(GA_NON_CONTENT_REQUEST_MESSAGE)
+    throw new HostRefusalError(GA_NON_CONTENT_REQUEST_MESSAGE)
   }
   if (!isCanonicalGoogleOrigin(original.url)) {
-    throw new Error(GA_CUSTOM_GOOGLE_ORIGIN_MESSAGE)
+    throw new HostRefusalError(GA_CUSTOM_GOOGLE_ORIGIN_MESSAGE)
   }
   // Titles must reach the engine's title router even for retired or foreign IDs.
   if (
@@ -1717,16 +1744,8 @@ export async function rewriteGaHttpRequest(
     !input.isRegisteredModel(event.model.id) &&
     !isRetiredAgyModel(event.model.id)
   ) {
-    const modelID = event.model.id
-    const antigravityModelID = modelID.startsWith('antigravity-')
-      ? null
-      : `antigravity-${modelID}`
-    const suggestion =
-      antigravityModelID !== null && input.isRegisteredModel(antigravityModelID)
-        ? `Use google/${antigravityModelID}.`
-        : 'Choose a google/antigravity- model.'
-    throw new Error(
-      `This request cannot use Antigravity: google/${modelID} is not an Antigravity model. ${suggestion}`,
+    throw new HostRefusalError(
+      offCatalogModelRefusal(event.model.id, input.isRegisteredModel),
     )
   }
   const job: GaBridgeJob = {
@@ -1742,6 +1761,27 @@ export async function rewriteGaHttpRequest(
     body: await original.clone().text(),
   }
   event.request = input.bridge.rewrite(original, job, input.env)
+}
+
+function offCatalogModelRefusal(
+  modelID: string,
+  isRegisteredModel: (modelID: string) => boolean,
+): string {
+  // The host catalog can contain custom IDs. Keep retry hints and non-ID
+  // characters out of the refusal even though the name came from the host.
+  const safeID = (id: string) =>
+    /^[A-Za-z0-9._/-]{1,128}$/.test(id) && !openCodeRetryHint(id)
+  if (!safeID(modelID)) {
+    return 'This request cannot use Antigravity. Choose a google/antigravity- model.'
+  }
+  const twin = modelID.startsWith('antigravity-')
+    ? null
+    : `antigravity-${modelID}`
+  const suggestion =
+    twin && safeID(twin) && isRegisteredModel(twin)
+      ? `Use google/${twin}.`
+      : 'Choose a google/antigravity- model.'
+  return `This request cannot use Antigravity: google/${modelID} is not an Antigravity model. ${suggestion}`
 }
 
 /** Adapt only responses whose request belongs to a recognized bridge job. */
@@ -1881,6 +1921,19 @@ function stderrLogSink(record: {
   }
 }
 
+function gaHostFailure(
+  error: unknown,
+  report: (diagnostic: string) => void,
+): Error {
+  if (
+    error instanceof RuntimeLayoutRefusal ||
+    error instanceof LoopbackProxyGuardError ||
+    error instanceof GaSetupContextError
+  )
+    return error
+  return hostFailure(error, report)
+}
+
 function headerValue(
   request: Request,
   names: readonly string[],
@@ -1913,6 +1966,20 @@ export async function setupGaActivation(
   context: GaHostContext,
   factory: GaLocationServicesFactory,
   overrides: GaPluginOverrides = {},
+): Promise<Plugin.Cleanup | undefined> {
+  return setupGaActivationRuntime(context, factory, overrides).catch(
+    (error: unknown) => {
+      throw gaHostFailure(error, (message) =>
+        stderrLogSink({ service: 'setup', level: 'error', message }),
+      )
+    },
+  )
+}
+
+async function setupGaActivationRuntime(
+  context: GaHostContext,
+  factory: GaLocationServicesFactory,
+  overrides: GaPluginOverrides,
 ): Promise<Plugin.Cleanup | undefined> {
   if (classifyGaSetupContext(context) === 'legacy') return undefined
   const directory = context.location.directory
@@ -2122,6 +2189,15 @@ export async function setupGaActivation(
           isRegisteredModel,
           env: process.env,
           ownership,
+        }).catch((error: unknown) => {
+          if (
+            event.request.signal.aborted &&
+            error === event.request.signal.reason
+          )
+            throw error
+          throw gaHostFailure(error, (message) =>
+            runtime.logger.createLogger('request').warn(message),
+          )
         }),
       { providerID: GA_PROVIDER_ID },
     )

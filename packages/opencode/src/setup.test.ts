@@ -149,6 +149,7 @@ function windowsInspectionFixture() {
     APPDATA: join(p.root, 'appdata'),
     TEMP: join(p.root, 'temp'),
     TMP: join(p.root, 'temp'),
+    SystemRoot: 'C:\\Windows',
     PATH: join(p.root, 'absent-bin'),
   }
   // Translate Windows-style file queries into this test's temporary directory.
@@ -229,13 +230,16 @@ function windowsInspectionFixture() {
     runner: {
       run: async (file) => {
         calls.push(file)
-        if (file === 'tasklist.exe')
+        if (file === 'C:\\Windows\\System32\\tasklist.exe')
           return {
             exitCode: 0,
             stdout: `"node.exe","${firstPid}","Console"\r\n"bun.exe","${firstPid + 1}","Console"\r\n`,
             stderr: '',
           }
-        if (file === 'powershell.exe') {
+        if (
+          file ===
+          'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+        ) {
           // Simulate PowerShell creating a 64-byte startup file. The dry-run test
           // compares every file below the temporary root, so this write must fail it.
           mkdirSync(dirname(startupPath), { recursive: true, mode: 0o700 })
@@ -647,7 +651,7 @@ describe('setup plugin callbacks', () => {
     const before = snapshot(f.p.root)
     expect(await f.execute(true)).toBe(0)
     expect(snapshot(f.p.root)).toEqual(before)
-    expect(f.calls).toEqual(['tasklist.exe'])
+    expect(f.calls).toEqual(['C:\\Windows\\System32\\tasklist.exe'])
     expect(f.output()).toContain('Planned Antigravity for opencode (local)')
     expect(f.output()).toContain(
       'Node or Bun programs are running; a real run checks whether any of them is OpenCode or Pi.',
@@ -659,14 +663,19 @@ describe('setup plugin callbacks', () => {
       hosts: [],
       uncheckedRuntimes: 2,
     })
-    expect(f.calls).toEqual(['tasklist.exe', 'tasklist.exe'])
+    expect(f.calls).toEqual([
+      'C:\\Windows\\System32\\tasklist.exe',
+      'C:\\Windows\\System32\\tasklist.exe',
+    ])
     expect(snapshot(f.p.root)).toEqual(before)
   })
 
   it('real Windows setup still inspects runtime command lines and refuses a running host before callbacks (synthetic runner)', async () => {
     const f = windowsInspectionFixture()
     expect(await f.execute(false)).toBe(1)
-    expect(f.calls).toEqual(['powershell.exe'])
+    expect(f.calls).toEqual([
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    ])
     expect(f.errors()).toContain(
       'Please quit all OpenCode, LiteCode, and Pi processes before running setup.',
     )
@@ -1214,8 +1223,9 @@ describe('setup plugin callbacks', () => {
       provider: 'google',
       placeholderKey: 'antigravity-vault-custody',
     }).enterVault()
-    const bytes = [local.authPath, local.accountFile, authPath, stashPath].map(
-      (path) => readFileSync(path),
+    expect(existsSync(stashPath)).toBe(false)
+    const bytes = [local.authPath, local.accountFile, authPath].map((path) =>
+      readFileSync(path),
     )
     const deps = createDefaultCliDependencies()
     deps.performLogin = mock(async () => {
@@ -1234,7 +1244,6 @@ describe('setup plugin callbacks', () => {
       local.authPath,
       local.accountFile,
       authPath,
-      stashPath,
     ].entries()) {
       const expected = bytes[index]
       if (!expected) throw new Error('Missing preflight byte snapshot')
@@ -1244,7 +1253,7 @@ describe('setup plugin callbacks', () => {
     expect(existsSync(join(p.config, 'opencode.jsonc'))).toBe(false)
   })
 
-  it('foreign Pi login conflicts refuse before any selected host enrollment ceremony, with unchanged auth and stash bytes', async () => {
+  it('invalid Pi auth refuses before any selected host enrollment ceremony, with unchanged auth and legacy stash bytes', async () => {
     const p = profile(process.platform === 'win32' ? tmpdir() : '/tmp')
     fakeHostCommands(p)
     Object.assign(process.env, p.env)
@@ -1273,17 +1282,9 @@ describe('setup plugin callbacks', () => {
       provider: 'google',
       placeholderKey: 'antigravity-vault-custody',
     }).enterVault()
-    writeFileSync(
-      authPath,
-      JSON.stringify({
-        google: {
-          type: 'oauth',
-          refresh: 'synthetic-foreign',
-          access: '',
-          expires: 1,
-        },
-      }),
-    )
+    writeFileSync(authPath, '{invalid auth')
+    mkdirSync(dirname(stashPath), { recursive: true, mode: 0o700 })
+    writeFileSync(stashPath, 'legacy credentials, not JSON', { mode: 0o600 })
     const bytes = [local.authPath, local.accountFile, authPath, stashPath].map(
       (path) => readFileSync(path),
     )
@@ -1305,7 +1306,7 @@ describe('setup plugin callbacks', () => {
         env: p.env,
         connect,
       }),
-    ).rejects.toThrow('different login from its saved stash')
+    ).rejects.toThrow('invalid-auth')
     expect(enrollPropose).not.toHaveBeenCalled()
     for (const [index, path] of [
       local.authPath,

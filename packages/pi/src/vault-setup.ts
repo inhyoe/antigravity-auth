@@ -13,6 +13,7 @@ import {
   ANTIGRAVITY_PROVIDER_ID,
   type EmptyVaultRosterCause,
   emptyVaultRosterCause,
+  HostRefusalError,
   sharedVaultTokenFolder,
   sharedVaultTokenFolderOutcome,
   sharedVaultTokenFolderText,
@@ -190,7 +191,7 @@ export interface PiVaultSetupOptions {
 }
 
 /** A setup action refused before anything changed, with a message for the user. */
-export class PiVaultSetupError extends Error {
+export class PiVaultSetupError extends HostRefusalError {
   constructor(message: string) {
     super(message)
     this.name = 'PiVaultSetupError'
@@ -200,9 +201,6 @@ export class PiVaultSetupError extends Error {
 export class PiVaultSetup {
   readonly #options: PiVaultSetupOptions
   readonly paths: ClaustrumEnrollmentPaths
-  // The enrollment name from the last approved status read here, for the
-  // request path's no-account error (see `grantPrincipal`).
-  #approvedPrincipal: string | undefined
 
   constructor(options: PiVaultSetupOptions) {
     this.#options = options
@@ -244,7 +242,6 @@ export class PiVaultSetup {
           code: 'unreadable-state',
         }),
       )
-    this.#remember(enrollment)
     const authority = await vaultAuthority(
       this.paths,
       PI_ANTIGRAVITY_ENROLLMENT_NAME,
@@ -272,19 +269,6 @@ export class PiVaultSetup {
           : { mode: 'unreadable' as const, modeProblem: mode.reason }),
       enrollment,
     }
-  }
-
-  #remember(status: ClaustrumEnrollmentStatus): void {
-    if (status.state === 'approved')
-      this.#approvedPrincipal = piGrantPrincipal(status)
-  }
-
-  /**
-   * The enrollment name the vault grants read access to: the name in the
-   * last approved status read here, else the default name.
-   */
-  grantPrincipal(): string {
-    return this.#approvedPrincipal ?? PI_ANTIGRAVITY_ENROLLMENT_NAME
   }
 
   /** Inspect the native login only when local accounts are selected. */
@@ -320,7 +304,6 @@ export class PiVaultSetup {
       if (current.state === 'denied' || current.state === 'blocked')
         await manager.resetTerminal()
       const reconciled = await manager.reconcile()
-      this.#remember(reconciled)
       if (reconciled.state === 'approved') {
         const saved = readPiVaultMode(this.#options.modeFile)
         await this.useVault(
@@ -536,17 +519,16 @@ function piEmptyRosterGuidance(
 
 /**
  * The send error when the vault serves Pi no account: the menu's lines for
- * the same cause, one per line, for the enrollment name `principal` (the
- * default name without one). An unknown cause returns undefined, so the send
- * keeps its general error.
+ * the same cause, without disclosing the enrollment name. An unknown cause
+ * returns undefined, so the send keeps its general error.
  */
 export function piEmptyVaultRosterRefusal(
   cause: EmptyVaultRosterCause,
-  principal: string = PI_ANTIGRAVITY_ENROLLMENT_NAME,
 ): string | undefined {
-  return cause === 'unknown'
-    ? undefined
-    : piEmptyRosterGuidance(cause, principal).join('\n')
+  if (cause === 'unknown') return undefined
+  if (cause === 'no-grant')
+    return 'The vault operator approved Pi. The vault has not granted Pi read access. Open the Vault section of the Antigravity menu for grant instructions.'
+  return piEmptyRosterGuidance(cause, PI_ANTIGRAVITY_ENROLLMENT_NAME).join('\n')
 }
 
 /** The next steps for an enrollment state that needs the user or the operator to act. */
@@ -567,7 +549,7 @@ function enrollmentGuidance(status: ClaustrumEnrollmentStatus): string[] {
 function describeSource(status: PiVaultSetupStatus): string {
   switch (status.mode) {
     case 'custody':
-      return "Using the vault for Antigravity accounts; Pi's own login is set aside."
+      return 'Using the vault for Antigravity accounts. Sign in again with /login google after leaving the vault.'
     case 'local':
       return status.hostSlot === 'login'
         ? "Using Pi's own login (the account you signed in with /login), not the vault."

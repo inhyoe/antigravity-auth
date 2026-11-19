@@ -28,11 +28,14 @@ import {
   getQuotaKey,
   getResolverAliasMap,
   type HealthScoreTracker,
+  HostRefusalError,
   isClaudeThinkingModel,
   isImageGenerationModel,
   isRetiredAgyModel,
+  isUpstreamFailure,
   MAX_UNCONFIRMED_RATE_LIMIT_RETRIES,
   type ManagedAccount,
+  markUpstreamFailure,
   type OAuthAuthDetails,
   PRE_RESPONSE_DEADLINE_MS,
   type PreResponseClock,
@@ -46,6 +49,8 @@ import {
   type QuotaGroup,
   type QuotaGroupSummary,
   type QuotaManager,
+  quotaAccountIdentity,
+  quotaExhaustedUntil,
   RETIRED_AGY_MODEL_MESSAGE,
   redactCredentialError,
   redactCredentialResponse,
@@ -59,6 +64,7 @@ import {
 } from '@cortexkit/antigravity-auth-core'
 import { hasVaultHost } from '../../common-auth-embedded/claustrum/host.js'
 import {
+  type AskRoutingInput,
   askRouting,
   type BillingRequestKind,
   type RoutingCandidate,
@@ -129,9 +135,11 @@ import {
   hasVaultRoutingAccessor,
   observeVaultServed,
   observeVaultUpstream,
+  type RoutingIdentity,
   reportVaultExhaustion,
+  type VaultExhaustionProof,
 } from './vault-routing'
-import { isPrimaryVaultRequest } from './vault-routing-purpose'
+import { isTitleVaultRequest } from './vault-routing-purpose'
 
 /**
  * Wait before retrying the same selection after its first 429.
@@ -146,6 +154,73 @@ const MODEL_UNAVAILABLE_TTL_MS = 60 * 60 * 1000
 // while the wait itself is rare. Use the routing accessor's 2 s ceiling, well
 // above routing's normal admission time.
 const ROUTING_ASK_DEADLINE_MS = 2000
+
+const REFUSAL_BODY_TIMEOUT_MS = 2_000
+const REFUSAL_BODY_MAX_BYTES = 64 * 1024
+
+// Replay only a complete body so response processing and debug logging never
+// reread a stalled or oversized upstream stream. Keep the real status and retry
+// headers even when the body cannot be used as evidence.
+async function readRefusalBody(
+  response: Response,
+  deadline: PreResponseDeadline,
+) {
+  const reader = response.body?.getReader()
+  if (!reader) return { response, text: '' }
+  const buffer = new Uint8Array(REFUSAL_BODY_MAX_BYTES)
+  const stopAt = performance.now() + REFUSAL_BODY_TIMEOUT_MS
+  let size = 0
+  let finished = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    finished = await deadline.wait(() =>
+      Promise.race([
+        (async () => {
+          try {
+            while (true) {
+              const chunk = await reader.read()
+              if (performance.now() >= stopAt) return false
+              if (chunk.done) return true
+              if (size + chunk.value.byteLength > buffer.byteLength)
+                return false
+              buffer.set(chunk.value, size)
+              size += chunk.value.byteLength
+            }
+          } catch {
+            return false
+          }
+        })(),
+        new Promise<false>((resolve) => {
+          timer = setTimeout(() => resolve(false), REFUSAL_BODY_TIMEOUT_MS)
+        }),
+      ]),
+    )
+  } finally {
+    clearTimeout(timer)
+    if (!finished) void reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+  const body = finished ? buffer.subarray(0, size) : null
+  const headers = new Headers(response.headers)
+  if (!finished) {
+    headers.delete('content-length')
+    headers.delete('content-encoding')
+  }
+  return {
+    response: preserveResponseMetadata(
+      new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      }),
+      response,
+    ),
+    text: body ? new TextDecoder().decode(body) : undefined,
+  }
+}
+
+const routingIdentityKey = ({ accountId, credentialId }: RoutingCandidate) =>
+  JSON.stringify([accountId, credentialId])
 
 /**
  * Whole seconds a routing refusal asks the client to wait, or undefined when
@@ -198,6 +273,7 @@ export interface RequestAccountRow {
   }
   readonly cachedQuota?: Partial<Record<QuotaGroup, QuotaGroupSummary>>
   readonly cachedQuotaUpdatedAt?: number
+  readonly cachedQuotaAccountId?: string
   readonly capturedTierId?: string
   readonly capturedPaidTierId?: string
   readonly ref?: {
@@ -262,6 +338,13 @@ export interface RequestAccountPool<A extends RequestAccountRow> {
   getEnabledAccounts(): A[]
   getCurrentAccountForFamily(
     ...args: CoreArgs<'getCurrentAccountForFamily'>
+  ): A | null
+  getRoutedAccountForFamily(
+    ...args: CoreArgs<'getRoutedAccountForFamily'>
+  ): A | null
+  useRoutedAccount(
+    account: A,
+    ...rest: CoreArgsAfterAccount<'useRoutedAccount'>
   ): A | null
   isAccountCoolingDown(account: A): boolean
   isAccountOverSoftQuota(
@@ -1214,7 +1297,7 @@ export function createRequestExecutor<A extends RequestAccountRow>(
               code: 412,
               status: 'FAILED_PRECONDITION',
               message:
-                'This Antigravity thinking level is unavailable. Choose another thinking level.',
+                'This Antigravity thinking level is not offered. Choose another thinking level.',
             },
           }),
           { status: 412, headers: { 'Content-Type': 'application/json' } },
@@ -1230,12 +1313,31 @@ export function createRequestExecutor<A extends RequestAccountRow>(
     // loopback bridge) supplies it per request; every send of this request,
     // warmups included, then goes through it with the same AbortSignal.
     const sender = options.transport ?? defaultTransport
-    const transport: RequestTransport = (url, sendInit, sendOptions) =>
+    const transport = (
+      url: string,
+      sendInit: RequestInit,
+      sendOptions: AgyTransportOptions,
+      onSenderRejection?: (error: unknown) => void,
+    ) =>
       deadline.open(() => {
         waits.resumed()
-        return sender(url, sendInit, {
+        const optionsWithSignal = {
           ...sendOptions,
           signal: deadline.signal,
+        }
+        let pending: Promise<Response>
+        try {
+          // Keep this observer at the raw sender boundary. Errors from the
+          // deadline/wait wrapper above or response processing below are not
+          // physical transport failures.
+          pending = sender(url, sendInit, optionsWithSignal)
+        } catch (error) {
+          onSenderRejection?.(error)
+          throw markUpstreamFailure(error)
+        }
+        return pending.catch((error: unknown) => {
+          onSenderRejection?.(error)
+          throw markUpstreamFailure(error)
         })
       })
     const requestSessionIdentity =
@@ -1314,8 +1416,44 @@ export function createRequestExecutor<A extends RequestAccountRow>(
       dumpContext?: ReturnType<GeminiDumpState['dumpRequest']>
     }
 
-    let lastFailure: FailureContext | null = null
+    type RetainedMainAttemptFailure =
+      | { kind: 'http'; context: FailureContext }
+      | { kind: 'transport'; error: Error }
+
+    let retainedMainAttemptFailure: RetainedMainAttemptFailure | null = null
     let lastError: Error | null = null
+    const retainMainTransportFailure = (error: unknown) => {
+      retainedMainAttemptFailure = {
+        kind: 'transport',
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+    const terminalMainAttemptFailure = async (
+      fallbackMessage: string,
+    ): Promise<Response> => {
+      const failure = retainedMainAttemptFailure
+      if (failure?.kind === 'http') {
+        const context = failure.context
+        return wire.transformResponse(
+          context.response,
+          context.streaming,
+          context.debugContext,
+          context.requestedModel,
+          context.projectId,
+          context.endpoint,
+          context.effectiveModel,
+          context.sessionId,
+          context.toolDebugMissing,
+          context.toolDebugSummary,
+          debugLines,
+          context.dumpContext,
+        )
+      }
+      throw terminalFetchError(
+        lastError ?? (failure?.kind === 'transport' ? failure.error : null),
+        fallbackMessage,
+      )
+    }
     const abortSignal = init?.signal ?? undefined
     const routingSleep = (
       ms: number,
@@ -1393,12 +1531,105 @@ export function createRequestExecutor<A extends RequestAccountRow>(
     // cross-request memory during this request. Neither skip is a penalty.
     const modelUnavailableIndexes = new Set<number>()
     let routingPlacementConsidered = false
+    let routedCandidate: RoutingCandidate | undefined
+    let continueRouting: AskRoutingInput['exhausted']
+    const refusedRoutes = new Map<
+      string,
+      NonNullable<AskRoutingInput['exhausted']>
+    >()
+    let routingTitle = false
+    let routingWaitMs = 0
+
+    const failedRoutedPick = () =>
+      createNativeGoogleErrorResponse({
+        status: 412,
+        reason: 'routing_refused',
+      })
+
+    const routingWaitRemainingMs = () =>
+      Math.min(
+        deadline.remainingMs(),
+        maxWaitMs > 0 ? Math.max(0, maxWaitMs - routingWaitMs) : Infinity,
+      )
+
+    const routingRefusalResponse = (refused: RoutingRefusal['refused']) => {
+      const { code, routingCode, reason } = refused
+      log.warn('routing-refused', {
+        code,
+        ...(routingCode === undefined ? {} : { routingCode }),
+        ...(reason === undefined ? {} : { reason }),
+      })
+      const retryAfterSeconds = routingRefusalRetryAfterSeconds(
+        refused,
+        Date.now(),
+      )
+      return createNativeGoogleErrorResponse({
+        status: 412,
+        reason: 'routing_refused',
+        ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+      })
+    }
+
+    const waitOnRoutedAccount = async (
+      ms: number,
+      reason: RequestWaitReason,
+      attempt?: number,
+    ) => {
+      if (
+        ms >= deadline.remainingMs() ||
+        (maxWaitMs > 0 && routingWaitMs + ms > maxWaitMs)
+      )
+        return false
+      routingWaitMs += ms
+      if (ms > 0) await routingSleep(ms, reason, attempt)
+      checkAborted()
+      return true
+    }
+
+    const unconfirmedRefusal = () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 412,
+            status: 'FAILED_PRECONDITION',
+            message: UNCONFIRMED_RATE_LIMIT_MESSAGE,
+          },
+        }),
+        { status: 412, headers: { 'Content-Type': 'application/json' } },
+      )
+
+    const retryAfterRoutedBackoff = async (
+      identity: RoutingIdentity,
+      retryAtMs: number,
+      response: Response,
+    ): Promise<Response | undefined> => {
+      checkAborted()
+      reportVaultRouting({ ...identity, kind: 'transient_backoff', retryAtMs })
+      void response.body?.cancel().catch(() => {})
+      if (unconfirmedRetries >= MAX_UNCONFIRMED_RATE_LIMIT_RETRIES)
+        return unconfirmedRefusal()
+      unconfirmedRetries++
+      if (
+        !(await waitOnRoutedAccount(
+          Math.max(0, retryAtMs - Date.now()),
+          'rate_limited',
+          unconfirmedRetries,
+        ))
+      )
+        return unconfirmedRefusal()
+    }
 
     while (true) {
       await assertAdmission()
       checkAborted()
+      const choice = routedCandidate
+      routedCandidate = undefined
+      const exhausted = continueRouting
+      continueRouting = undefined
+      if (exhausted) refusedRoutes.set(routingIdentityKey(exhausted), exhausted)
       const accountCount = accountManager.getAccountCount()
       if (accountCount === 0) {
+        if (choice) return failedRoutedPick()
         // Mirror the no-account short-circuit inside the retry loop so callers
         // that race with account removal still get a proper 401 instead of a
         // hang or a synthetic 200.
@@ -1418,7 +1649,7 @@ export function createRequestExecutor<A extends RequestAccountRow>(
       // else looks at it. It is not a rate limit or cooldown, so nothing is
       // marked and no wait estimate counts it as coming back.
       const allowlistExcluded = modelAccessExcluded(model)
-      if (allowlistExcluded) {
+      if (allowlistExcluded && !exhausted && !choice) {
         const serviceable = accountManager
           .getAccounts()
           .filter(
@@ -1453,6 +1684,52 @@ export function createRequestExecutor<A extends RequestAccountRow>(
             .filter((entry) => !allowlistExcluded.has(entry.index))
         : accountManager.getAccounts()
 
+      const modelUnavailableForPass = () =>
+        new Set([...modelUnavailableIndexes, ...rememberedIndexes(model)])
+      let routingUnavailableIndexes: Set<number> | undefined
+      const vaultCredentials =
+        credentials.domain === 'vault' ? credentials : undefined
+      const routingPresent =
+        vaultCredentials !== undefined && hasVaultRoutingAccessor()
+      routingTitle ||=
+        routingPresent && isTitleVaultRequest(kind, init?.headers)
+
+      let account: A | null = null
+      if (
+        routingPresent &&
+        accountSessionIdentity &&
+        vaultCredentials?.routingCandidate
+      ) {
+        const candidateFor = vaultCredentials.routingCandidate
+        const row = choice
+          ? accountManager.getAccounts().find((entry) => {
+              const current = candidateFor(entry)
+              return (
+                current.credentialId === choice.credentialId &&
+                current.accountId === choice.accountId
+              )
+            })
+          : !routingPlacementConsidered
+            ? accountManager.getRoutedAccountForFamily(
+                family,
+                accountSessionIdentity,
+              )
+            : null
+        if (row && !allowlistExcluded?.has(row.index)) {
+          routingUnavailableIndexes = modelUnavailableForPass()
+          if (!routingUnavailableIndexes.has(row.index))
+            account = accountManager.useRoutedAccount(
+              row,
+              family,
+              model ?? undefined,
+              accountSessionIdentity,
+              !routingTitle,
+            )
+        }
+      }
+      const routedPlacement = account !== null
+      if (choice && !routedPlacement) return failedRoutedPick()
+
       // Operator killswitch: an account whose cached remaining quota for
       // this model's quota group is below the configured floor is not
       // eligible. Missing or stale quota counts as eligible, so a cold
@@ -1461,30 +1738,32 @@ export function createRequestExecutor<A extends RequestAccountRow>(
       // end in the operator refusal.
       const operatorKillswitch = operatorSettings?.get().killswitch
       const floorKeying = operatorSettings?.floorKeying?.()
-      const eligibleIndexes = operatorKillswitch?.enabled
-        ? new Set(
-            permittedAccounts
-              .filter((entry) => {
-                const decision = evaluateKillswitchForAccount(
-                  entry,
-                  family,
-                  {
-                    killswitch: operatorKillswitch,
-                    log_level: 'info',
-                  },
-                  {
-                    now: Date.now(),
-                    model,
-                    ...(floorKeying ? { floorKeying } : {}),
-                  },
-                )
-                return decision.allowed
-              })
-              .map((entry) => entry.index),
-          )
-        : null
+      const eligibleIndexes =
+        !routedPlacement && operatorKillswitch?.enabled
+          ? new Set(
+              permittedAccounts
+                .filter((entry) => {
+                  const decision = evaluateKillswitchForAccount(
+                    entry,
+                    family,
+                    {
+                      killswitch: operatorKillswitch,
+                      log_level: 'info',
+                    },
+                    {
+                      now: Date.now(),
+                      model,
+                      ...(floorKeying ? { floorKeying } : {}),
+                    },
+                  )
+                  return decision.allowed
+                })
+                .map((entry) => entry.index),
+            )
+          : null
 
       if (
+        !exhausted &&
         eligibleIndexes !== null &&
         eligibleIndexes.size === 0 &&
         permittedAccounts.length > 0
@@ -1534,11 +1813,9 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                 .filter((index) => !eligibleIndexes.has(index)),
             )
 
-      const unavailableIndexes = new Set([
-        ...modelUnavailableIndexes,
-        ...rememberedIndexes(model),
-      ])
-      if (unavailableIndexes.size > 0) {
+      const unavailableIndexes =
+        routingUnavailableIndexes ?? modelUnavailableForPass()
+      if (!exhausted && !routedPlacement && unavailableIndexes.size > 0) {
         const candidates = accountManager
           .getAccounts()
           .filter(
@@ -1580,123 +1857,149 @@ export function createRequestExecutor<A extends RequestAccountRow>(
               ...(allowlistExcluded ?? []),
             ])
 
-      const routingPresent =
-        credentials.domain === 'vault' && hasVaultRoutingAccessor()
       const firstPlacement =
         routingPresent &&
+        !routedPlacement &&
         !routingPlacementConsidered &&
         accountSessionIdentity &&
         !accountManager.getCurrentAccountForFamily(
           family,
           accountSessionIdentity,
         )
-      // Select before awaiting routing so concurrent sessions see the updated account choice and selection order.
-      let account = accountManager.getCurrentOrNextForFamily(
-        family,
-        model,
-        config.account_selection_strategy,
-        config.pid_offset_enabled,
-        config.soft_quota_threshold_percent,
-        softQuotaCacheTtlMs,
-        accountSessionIdentity,
-        excludedIndexes,
-      )
+      const isHardEligible = (row: A) =>
+        row.enabled !== false &&
+        !row.accountIneligible &&
+        !row.verificationRequired &&
+        !allowlistExcluded?.has(row.index) &&
+        !unavailableIndexes.has(row.index)
+      const isRoutingCandidate = (row: A) =>
+        isHardEligible(row) &&
+        !killedIndexes?.has(row.index) &&
+        !accountManager.isAccountOverSoftQuota(
+          row,
+          family,
+          config.soft_quota_threshold_percent,
+          softQuotaCacheTtlMs,
+          model,
+          excludedIndexes,
+        )
 
-      if (account) {
-        routingPlacementConsidered = true
-        if (
-          firstPlacement &&
-          credentials.domain === 'vault' &&
-          credentials.routingCandidate &&
-          model &&
-          isPrimaryVaultRequest(kind, init?.headers)
-        ) {
-          const candidates = accountManager
-            .getAccounts()
-            .filter(
-              (row) =>
-                row.enabled !== false &&
-                !row.accountIneligible &&
-                !row.verificationRequired &&
-                !excludedIndexes?.has(row.index) &&
-                !accountManager.isRateLimited(row, family, model) &&
-                !accountManager.isAccountCoolingDown(row) &&
-                !accountManager.isAccountOverSoftQuota(
-                  row,
-                  family,
-                  config.soft_quota_threshold_percent,
-                  softQuotaCacheTtlMs,
-                  model,
-                  excludedIndexes,
-                ),
+      const selectLocally = () =>
+        accountManager.getCurrentOrNextForFamily(
+          family,
+          model,
+          config.account_selection_strategy,
+          config.pid_offset_enabled,
+          config.soft_quota_threshold_percent,
+          softQuotaCacheTtlMs,
+          accountSessionIdentity,
+          excludedIndexes,
+          !routingTitle,
+        )
+
+      // Reserve a local first choice before asking, but don't replace a routed
+      // session pin with a provisional choice during continuation.
+      if (!exhausted) account ??= selectLocally()
+      if (account) routingPlacementConsidered = true
+      if (
+        (firstPlacement || exhausted) &&
+        routingPresent &&
+        accountSessionIdentity &&
+        vaultCredentials?.routingCandidate &&
+        model
+      ) {
+        const roster = accountManager.getAccounts()
+        const currentKey = exhausted && routingIdentityKey(exhausted)
+        const holdCandidate =
+          exhausted?.limitWindow !== 'signed_out' && currentKey
+        const candidates = roster.flatMap((row) => {
+          const eligible = isRoutingCandidate(row)
+          if (!eligible && (!holdCandidate || !isHardEligible(row))) return []
+          const candidate = { ...vaultCredentials.routingCandidate!(row) }
+          const key = routingIdentityKey(candidate)
+          // A quota hold may keep the refused credential even when local quota
+          // policy excludes it. It is not a replacement pick.
+          if (key === holdCandidate && isHardEligible(row)) return [candidate]
+          const refusal = refusedRoutes.get(key)
+          if (
+            refusal &&
+            (refusal.limitWindow === 'signed_out' ||
+              (refusal.resetsAtMs ?? Infinity) > Date.now())
+          )
+            return []
+          return eligible ? [candidate] : []
+        })
+        if (candidates.length > 0 || exhausted) {
+          routingPlacementConsidered = true
+          const canHold =
+            !!holdCandidate &&
+            candidates.some(
+              (candidate) => routingIdentityKey(candidate) === holdCandidate,
             )
-            .map((row) => ({
-              ...credentials.routingCandidate!(row),
-              index: row.index,
-            }))
-          if (candidates.length > 0) {
-            const answer = await deadline.wait(() =>
-              askRouting({
-                sessionId: accountSessionIdentity.id,
-                provider: 'antigravity',
-                modelId: model,
-                candidates,
-                deadlineMs: Math.min(
-                  ROUTING_ASK_DEADLINE_MS,
-                  deadline.remainingMs(),
-                ),
-                refusals: true,
-              }),
+          const answer = await deadline.wait(() => {
+            const input = {
+              sessionId: accountSessionIdentity.id,
+              provider: 'antigravity',
+              modelId: model,
+              candidates,
+              deadlineMs: Math.min(
+                ROUTING_ASK_DEADLINE_MS,
+                deadline.remainingMs(),
+              ),
+              refusals: true as const,
+            }
+            return askRouting(
+              exhausted
+                ? {
+                    ...input,
+                    mode: 'continue',
+                    requestId: randomUUID(),
+                    exhausted,
+                    holdWaitMaxS: canHold
+                      ? Math.floor(routingWaitRemainingMs() / 1000)
+                      : 0,
+                  }
+                : input,
             )
-            checkAborted()
-            if (answer && 'refused' in answer) {
-              // Routing has decided this request gets no account. Honour that
-              // as final: send nothing, pick no other account, mark nothing
-              // and leave retrying to the caller after Retry-After.
-              const { code, routingCode } = answer.refused
-              log.warn('routing-refused', {
-                code,
-                ...(routingCode === undefined ? {} : { routingCode }),
-              })
-              const retryAfterSeconds = routingRefusalRetryAfterSeconds(
-                answer.refused,
-                Date.now(),
-              )
+          })
+          checkAborted()
+          if (answer && 'refused' in answer)
+            return routingRefusalResponse(answer.refused)
+          if (exhausted && answer?.hold) {
+            if (
+              !canHold ||
+              routingIdentityKey(answer.candidate) !== holdCandidate
+            )
+              return failedRoutedPick()
+            const delay = answer.hold.retry_after_ms
+            if (!(await waitOnRoutedAccount(delay, 'account_limit')))
               return createNativeGoogleErrorResponse({
                 status: 412,
-                reason: 'routing_refused',
-                ...(retryAfterSeconds === undefined
-                  ? {}
-                  : { retryAfterSeconds }),
+                reason: 'pool_unavailable',
+                resetAfterMs: delay,
               })
-            }
-            if (
-              answer &&
-              answer.candidate.index !== account.index &&
-              !excludedIndexes?.has(answer.candidate.index)
-            ) {
-              // Re-run the selector to validate routing's choice and update the session's selected account.
-              account =
-                accountManager.getCurrentOrNextForFamily(
-                  family,
-                  model,
-                  config.account_selection_strategy,
-                  config.pid_offset_enabled,
-                  config.soft_quota_threshold_percent,
-                  softQuotaCacheTtlMs,
-                  accountSessionIdentity,
-                  new Set([
-                    ...(excludedIndexes ?? []),
-                    ...accountManager
-                      .getAccounts()
-                      .filter((row) => row.index !== answer.candidate.index)
-                      .map((row) => row.index),
-                  ]),
-                ) ?? account
-            }
+          } else if (
+            answer &&
+            exhausted &&
+            routingIdentityKey(answer.candidate) === holdCandidate
+          ) {
+            return failedRoutedPick()
+          }
+          const currentRoster = accountManager.getAccounts()
+          if (
+            answer ||
+            exhausted ||
+            currentRoster.length !== roster.length ||
+            currentRoster.some((row, index) => row !== roster[index])
+          ) {
+            // A matched pick is revalidated before it can send. An absent
+            // answer can still fall back to ordinary local selection.
+            routedCandidate = answer?.candidate
+            continue
           }
         }
       }
+      if (exhausted) account ??= selectLocally()
 
       // The selected account must be inside the eligibility mask and
       // permitted by its model list.
@@ -1930,7 +2233,8 @@ export function createRequestExecutor<A extends RequestAccountRow>(
         )
       }
       previousAccountIndex = account.index
-      accountManager.recordSessionUsage(account.index, accountSessionIdentity)
+      if (!routingTitle)
+        accountManager.recordSessionUsage(account.index, accountSessionIdentity)
       if (debug.isDebugEnabled()) {
         debug.logAccountContext('Selected', {
           index: account.index,
@@ -2191,6 +2495,9 @@ export function createRequestExecutor<A extends RequestAccountRow>(
         }
       }
       const selected = account
+      const expectedRoutedCredential = routedPlacement
+        ? (choice ?? vaultCredentials?.routingCandidate?.(selected))
+        : undefined
 
       const sendPhysical = async (
         url: string,
@@ -2198,6 +2505,7 @@ export function createRequestExecutor<A extends RequestAccountRow>(
         admission: RequestSendAdmission | undefined,
         sendModel: string,
         requestKind: BillingRequestKind,
+        onMainTransportFailure?: (error: unknown) => void,
       ): Promise<Response> => {
         const source =
           credentials.domain === 'local'
@@ -2222,10 +2530,15 @@ export function createRequestExecutor<A extends RequestAccountRow>(
               )
             : undefined
         try {
-          const response = await transport(url, sendInit, {
-            signal: abortSignal,
-            onDebug: pushDebug,
-          })
+          const response = await transport(
+            url,
+            sendInit,
+            {
+              signal: abortSignal,
+              onDebug: pushDebug,
+            },
+            onMainTransportFailure,
+          )
           return billing?.observe(response) ?? response
         } catch (error) {
           billing?.end(false)
@@ -2427,7 +2740,10 @@ export function createRequestExecutor<A extends RequestAccountRow>(
         )
       }
 
-      if (accountManager.isRateLimited(account, family, model)) {
+      if (
+        !routedPlacement &&
+        accountManager.isRateLimited(account, family, model)
+      ) {
         shouldSwitchAccount = true
       }
 
@@ -2466,14 +2782,25 @@ export function createRequestExecutor<A extends RequestAccountRow>(
             if (credentials.domain === 'vault') {
               // A rotated admission taken after a 401 serves exactly the
               // retry it was taken for, then is gone.
-              sendAdmission =
-                rotatedAdmission ??
-                (await deadline.wait(() =>
-                  credentials.admit({
-                    account,
-                    signal: abortSignal,
-                  }),
-                ))
+              try {
+                sendAdmission =
+                  rotatedAdmission ??
+                  (await deadline.wait(() =>
+                    credentials.admit({ account, signal: abortSignal }),
+                  ))
+              } catch (error) {
+                checkAborted()
+                if (routedPlacement) return failedRoutedPick()
+                throw error
+              }
+              if (
+                expectedRoutedCredential &&
+                (sendAdmission.credentialId !==
+                  expectedRoutedCredential.credentialId ||
+                  sendAdmission.accountIdentity !==
+                    expectedRoutedCredential.accountId)
+              )
+                return failedRoutedPick()
               rotatedAdmission = undefined
               sendAccessToken = sendAdmission.accessToken
               sendProjectId = sendAdmission.projectId
@@ -2546,6 +2873,12 @@ export function createRequestExecutor<A extends RequestAccountRow>(
               toolDebugSummary: prepared.toolDebugSummary,
               dumpContext,
             })
+            const retainHttpFailure = (failureResponse: Response) => {
+              retainedMainAttemptFailure = {
+                kind: 'http',
+                context: createFailureContext(failureResponse),
+              }
+            }
 
             await runThinkingWarmup(prepared, sendProjectId)
             await runCacheWarmupProbe(prepared)
@@ -2578,13 +2911,27 @@ export function createRequestExecutor<A extends RequestAccountRow>(
               `dispatching request via ${prepared.headerStyle} transport`,
             )
             physicalAttemptStarted = true
-            const response = await sendPhysical(
+            let response = await sendPhysical(
               toUrlString(prepared.request),
               prepared.init,
               sendAdmission,
               prepared.effectiveModel ?? model ?? 'unknown',
               kind ?? 'primary',
+              retainMainTransportFailure,
             )
+            const receivedAtMs = Date.now()
+            let boundedRefusal:
+              | Awaited<ReturnType<typeof readRefusalBody>>
+              | undefined
+            if (
+              routingPresent &&
+              (response.status === 429 ||
+                response.status === 403 ||
+                response.status === 404)
+            ) {
+              boundedRefusal = await readRefusalBody(response, deadline)
+              response = boundedRefusal.response
+            }
             if (response.ok) deadline.acceptHeaders()
             apiRequestCount++
             accountManager.recordRequest(account.index, family)
@@ -2658,6 +3005,22 @@ export function createRequestExecutor<A extends RequestAccountRow>(
             // actual account/header-style used by this request. Fire-and-
             // forget — the dispatch path must not wait on a state write.
             const sessionKey = requestSessionIdentity.sessionId
+            const unreadableLimit =
+              response.status === 429 &&
+              boundedRefusal !== undefined &&
+              boundedRefusal.text === undefined
+            const routingIdentity =
+              (routedPlacement || unreadableLimit) &&
+              sendAdmission &&
+              sessionKey &&
+              hasVaultRoutingAccessor()
+                ? {
+                    sessionId: sessionKey,
+                    accountId: sendAdmission.accountIdentity,
+                    credentialId: sendAdmission.credentialId,
+                  }
+                : undefined
+            const routedIdentity = routedPlacement ? routingIdentity : undefined
             if (sessionKey) {
               const routingEntry: RequestRoutingEntry = {
                 accountId: `acct-${account.index}`,
@@ -2684,9 +3047,9 @@ export function createRequestExecutor<A extends RequestAccountRow>(
               const _maxBackoffMs = (config.max_backoff_seconds ?? 60) * 1000
               const bodyInfo = await (async () => {
                 try {
-                  const text = await deadline.wait(() =>
-                    response.clone().text(),
-                  )
+                  const text = boundedRefusal
+                    ? (boundedRefusal.text ?? '')
+                    : await deadline.wait(() => response.clone().text())
                   try {
                     return JSON.parse(text) as unknown
                   } catch {
@@ -2709,6 +3072,19 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                 reasonInfo.message,
                 response.status,
               )
+              const retryAtMs = Math.min(
+                Number.MAX_SAFE_INTEGER,
+                // Use the short unconfirmed cooldown when the response doesn't
+                // contain a retry time recognized by the executor.
+                receivedAtMs +
+                  (reasonInfo.retryDelayMs ??
+                    unconfirmedRateLimitDelayMs(
+                      response.headers.get('retry-after'),
+                      receivedAtMs,
+                    )),
+              )
+              const routed429 =
+                response.status === 429 ? routedIdentity : undefined
 
               if (response.status === 429 && rateLimitReason === 'UNKNOWN') {
                 await logResponseBody(debugContext, response, 429)
@@ -2717,22 +3093,29 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                 const recognised = systemInstructionHasHarnessIdentity(
                   outgoing.request?.systemInstruction,
                 )
-                const terminal = () =>
-                  new Response(
-                    JSON.stringify({
-                      error: {
-                        code: 412,
-                        status: 'FAILED_PRECONDITION',
-                        message: UNCONFIRMED_RATE_LIMIT_MESSAGE,
-                      },
-                    }),
-                    {
-                      status: 412,
-                      headers: { 'Content-Type': 'application/json' },
-                    },
+                if (recognised) {
+                  void response.body?.cancel().catch(() => {})
+                  return unconfirmedRefusal()
+                }
+                if (routed429) {
+                  const refusal = await retryAfterRoutedBackoff(
+                    routed429,
+                    retryAtMs,
+                    response,
                   )
+                  if (refusal) return refusal
+                  i -= 1
+                  continue
+                }
+                // An unreadable real refusal is still evidence of a short
+                // backoff, even if the original ask fell back to local order.
+                if (routingIdentity)
+                  reportVaultRouting({
+                    ...routingIdentity,
+                    kind: 'transient_backoff',
+                    retryAtMs,
+                  })
                 void response.body?.cancel().catch(() => {})
-                if (recognised) return terminal()
                 const delayMs = unconfirmedRateLimitDelayMs(
                   response.headers.get('retry-after'),
                 )
@@ -2743,9 +3126,44 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                   'UNKNOWN',
                   delayMs,
                 )
+                const now = Date.now()
+                const at = account.cachedQuotaUpdatedAt
+                // Vault quota readings are matched to the route's account identity.
+                // Local readings must match the selected credential's refresh-token hash.
+                const sameQuotaIdentity =
+                  credentials.domain === 'vault' ||
+                  account.cachedQuotaAccountId ===
+                    quotaAccountIdentity(
+                      parseRefreshParts(
+                        credentials.toAuthDetails(account).refresh,
+                      ).refreshToken,
+                    )
+                // Only a recent quota reading showing none available for this model
+                // can confirm exhaustion.
+                const emptyUntil =
+                  sameQuotaIdentity &&
+                  at !== undefined &&
+                  now - at <= softQuotaCacheTtlMs
+                    ? quotaExhaustedUntil(account, family, model, now)
+                    : 0
+                const quotaKey = getQuotaKey(family, model)
+                const resets: Readonly<Partial<Record<string, number>>> =
+                  account.rateLimitResetTimes
+                if (emptyUntil > (resets[quotaKey] ?? 0))
+                  accountManager.markRateLimited(
+                    account,
+                    emptyUntil - now,
+                    family,
+                    model,
+                  )
                 accountManager.requestSaveToDisk()
+                if ((resets[quotaKey] ?? 0) > now + delayMs) {
+                  switchedForUnconfirmed = true
+                  shouldSwitchAccount = true
+                  break
+                }
                 if (unconfirmedRetries >= MAX_UNCONFIRMED_RATE_LIMIT_RETRIES)
-                  return terminal()
+                  return unconfirmedRefusal()
                 unconfirmedRetries++
                 // Selection can rotate immediately to a ready account. Otherwise
                 // wait only for this short cooldown, never the quota backoff ladder.
@@ -2772,10 +3190,17 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                   break
                 }
                 await routingSleep(delayMs, 'rate_limited', unconfirmedRetries)
+                // A background reading may have extended the mark while we slept.
+                if ((resets[quotaKey] ?? 0) > now + delayMs) {
+                  switchedForUnconfirmed = true
+                  shouldSwitchAccount = true
+                  break
+                }
                 i -= 1
                 continue
               }
 
+              let exhaustion: VaultExhaustionProof | undefined
               if (
                 credentials.domain === 'vault' &&
                 sendAdmission &&
@@ -2787,7 +3212,7 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                   model,
                   account.cachedQuota,
                 )
-                reportVaultExhaustion({
+                exhaustion = reportVaultExhaustion({
                   identity: {
                     sessionId: sessionKey,
                     accountId: sendAdmission.accountIdentity,
@@ -2799,7 +3224,22 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                   quota: account.cachedQuota?.[group],
                   observedAt: account.cachedQuotaUpdatedAt,
                   signal: abortSignal,
+                  singleReport: !!routed429,
                 })
+              }
+              if (
+                routed429 &&
+                rateLimitReason === 'QUOTA_EXHAUSTED' &&
+                !exhaustion
+              ) {
+                const refusal = await retryAfterRoutedBackoff(
+                  routed429,
+                  retryAtMs,
+                  response,
+                )
+                if (refusal) return refusal
+                i -= 1
+                continue
               }
 
               if (
@@ -2808,10 +3248,20 @@ export function createRequestExecutor<A extends RequestAccountRow>(
               ) {
                 totalCapacityRetries++
                 if (isCapacityRetryBudgetExhausted(totalCapacityRetries)) {
+                  if (routed429) {
+                    const refusal = await retryAfterRoutedBackoff(
+                      routed429,
+                      retryAtMs,
+                      response,
+                    )
+                    if (refusal) return refusal
+                    i -= 1
+                    continue
+                  }
                   pushDebug(
                     `Total capacity retries (${MAX_TOTAL_CAPACITY_RETRIES}) exhausted, switching account`,
                   )
-                  lastFailure = createFailureContext(response)
+                  retainHttpFailure(response)
                   shouldSwitchAccount = true
                   break
                 }
@@ -2942,6 +3392,16 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                     serverRetryMs,
                     config.failure_ttl_seconds * 1000,
                   )
+                  if (routed429) {
+                    const refusal = await retryAfterRoutedBackoff(
+                      routed429,
+                      retryAtMs,
+                      response,
+                    )
+                    if (refusal) return refusal
+                    i -= 1
+                    continue
+                  }
                   shouldSwitchAccount = true
                   break
                 }
@@ -2959,6 +3419,17 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                 config.failure_ttl_seconds * 1000,
               )
               accountManager.requestSaveToDisk()
+
+              if (routed429 && !exhaustion) {
+                const refusal = await retryAfterRoutedBackoff(
+                  routed429,
+                  retryAtMs,
+                  response,
+                )
+                if (refusal) return refusal
+                i -= 1
+                continue
+              }
 
               const switchAccountDelayMs = config.switch_account_delay_ms ?? 500
 
@@ -2991,7 +3462,11 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                 )
               }
 
-              lastFailure = createFailureContext(response)
+              retainHttpFailure(response)
+              if (routed429 && exhaustion) {
+                const { accountId, credentialId } = routed429
+                continueRouting = { accountId, credentialId, ...exhaustion }
+              }
               shouldSwitchAccount = true
               break
             }
@@ -3008,12 +3483,14 @@ export function createRequestExecutor<A extends RequestAccountRow>(
               response.status === 404 &&
               currentEndpoint === ANTIGRAVITY_ENDPOINT_DAILY
             ) {
-              const notFoundBody = await deadline.wait(() =>
-                response
-                  .clone()
-                  .text()
-                  .catch(() => ''),
-              )
+              const notFoundBody = boundedRefusal
+                ? (boundedRefusal.text ?? '')
+                : await deadline.wait(() =>
+                    response
+                      .clone()
+                      .text()
+                      .catch(() => ''),
+                  )
               const unavailable = parseModelUnavailableError(notFoundBody)
               if (unavailable) {
                 if (tokenConsumed) {
@@ -3052,15 +3529,34 @@ export function createRequestExecutor<A extends RequestAccountRow>(
             retryState.resetAccountFailureState(account.index)
 
             if (response.status === 403) {
-              const errorBodyText = await deadline.wait(() =>
-                response
-                  .clone()
-                  .text()
-                  .catch(() => ''),
-              )
-              const extracted = classifyAccessError(errorBodyText)
+              const errorBodyText = boundedRefusal
+                ? boundedRefusal.text
+                : await deadline.wait(() =>
+                    response
+                      .clone()
+                      .text()
+                      .catch(() => ''),
+                  )
+              const extracted =
+                errorBodyText === undefined
+                  ? undefined
+                  : classifyAccessError(errorBodyText)
+              if (
+                routedIdentity &&
+                (extracted?.accountIneligible || extracted?.validationRequired)
+              ) {
+                // A signed-out observation lets routing move the session without
+                // treating a temporary access refusal as an invalid credential.
+                const { accountId, credentialId } = routedIdentity
+                continueRouting = {
+                  accountId,
+                  credentialId,
+                  limitWindow: 'signed_out',
+                  observedAtMs: receivedAtMs,
+                }
+              }
 
-              if (extracted.accountIneligible) {
+              if (extracted?.accountIneligible) {
                 const ineligibleReason =
                   extracted.message ??
                   'Google marked this account as ineligible for Antigravity.'
@@ -3085,12 +3581,12 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                   `account-ineligible: disabled account ${account.index}`,
                 )
                 trackers.health.recordFailure(account.index)
-                lastFailure = createFailureContext(response)
+                retainHttpFailure(response)
                 shouldSwitchAccount = true
                 break
               }
 
-              if (extracted.validationRequired) {
+              if (extracted?.validationRequired) {
                 const verificationReason =
                   extracted.message ?? 'Google requires account verification.'
                 const cooldownMs = 10 * 60 * 1000
@@ -3127,7 +3623,7 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                   `verification-required: disabled account ${account.index}`,
                 )
                 trackers.health.recordFailure(account.index)
-                lastFailure = createFailureContext(response)
+                retainHttpFailure(response)
                 shouldSwitchAccount = true
                 break
               }
@@ -3141,7 +3637,7 @@ export function createRequestExecutor<A extends RequestAccountRow>(
               i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1
             ) {
               await logResponseBody(debugContext, response, response.status)
-              lastFailure = createFailureContext(response)
+              retainHttpFailure(response)
               continue
             }
 
@@ -3155,6 +3651,7 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                 config.proactive_rotation_threshold_percent ?? 20
               if (
                 !advisoryClosing &&
+                !routingPresent &&
                 proactiveThreshold > 0 &&
                 accountManager.shouldProactivelyRotate(
                   family,
@@ -3202,7 +3699,11 @@ export function createRequestExecutor<A extends RequestAccountRow>(
 
               if (response.status === 400) {
                 const cloned = response.clone()
-                const bodyText = await deadline.wait(() => cloned.text())
+                const bodyText = await deadline.wait(() =>
+                  cloned.text().catch((error: unknown) => {
+                    throw markUpstreamFailure(error)
+                  }),
+                )
                 if (
                   bodyText.includes('Prompt is too long') ||
                   bodyText.includes('prompt_too_long')
@@ -3224,7 +3725,11 @@ export function createRequestExecutor<A extends RequestAccountRow>(
               const retryDelayMs = config.empty_response_retry_delay_ms ?? 2000
 
               const clonedForCheck = response.clone()
-              const bodyText = await deadline.wait(() => clonedForCheck.text())
+              const bodyText = await deadline.wait(() =>
+                clonedForCheck.text().catch((error: unknown) => {
+                  throw markUpstreamFailure(error)
+                }),
+              )
 
               if (isEmptyResponseBody(bodyText)) {
                 const emptyAttemptKey = `${prepared.sessionId ?? 'none'}:${prepared.effectiveModel ?? 'unknown'}`
@@ -3439,7 +3944,11 @@ export function createRequestExecutor<A extends RequestAccountRow>(
                 error: { message: 'Thinking recovery triggered' },
               }
 
-              const recoveryMessage = `${originalError.error?.message || 'Session recovery failed'}\n\n[RECOVERY] Thinking block corruption could not be resolved. Try starting a new session.`
+              // Upstream diagnostics can contain host retry hints even though
+              // this conversation needs a new session, not another attempt.
+              log.debug('thinking-recovery-failed', { error: originalError })
+              const recoveryMessage =
+                "Antigravity could not repair the conversation's thinking blocks. Start a new session."
 
               return new Response(
                 JSON.stringify({
@@ -3498,72 +4007,19 @@ export function createRequestExecutor<A extends RequestAccountRow>(
           pushDebug(
             `account-switch-cap: exceeded max_account_switches=${maxAccountSwitches}, giving up`,
           )
-          if (lastFailure) {
-            return wire.transformResponse(
-              lastFailure.response,
-              lastFailure.streaming,
-              lastFailure.debugContext,
-              lastFailure.requestedModel,
-              lastFailure.projectId,
-              lastFailure.endpoint,
-              lastFailure.effectiveModel,
-              lastFailure.sessionId,
-              lastFailure.toolDebugMissing,
-              lastFailure.toolDebugSummary,
-              debugLines,
-              lastFailure.dumpContext,
-            )
-          }
-          throw terminalFetchError(
-            lastError,
+          return terminalMainAttemptFailure(
             `Exceeded max account switches (${maxAccountSwitches}). All accounts rate-limited.`,
           )
         }
 
         if (accountCount <= 1) {
-          if (lastFailure) {
-            return wire.transformResponse(
-              lastFailure.response,
-              lastFailure.streaming,
-              lastFailure.debugContext,
-              lastFailure.requestedModel,
-              lastFailure.projectId,
-              lastFailure.endpoint,
-              lastFailure.effectiveModel,
-              lastFailure.sessionId,
-              lastFailure.toolDebugMissing,
-              lastFailure.toolDebugSummary,
-              debugLines,
-              lastFailure.dumpContext,
-            )
-          }
-          throw terminalFetchError(
-            lastError,
-            'All Antigravity endpoints failed',
-          )
+          return terminalMainAttemptFailure('All Antigravity endpoints failed')
         }
 
         continue
       }
 
-      if (lastFailure) {
-        return wire.transformResponse(
-          lastFailure.response,
-          lastFailure.streaming,
-          lastFailure.debugContext,
-          lastFailure.requestedModel,
-          lastFailure.projectId,
-          lastFailure.endpoint,
-          lastFailure.effectiveModel,
-          lastFailure.sessionId,
-          lastFailure.toolDebugMissing,
-          lastFailure.toolDebugSummary,
-          debugLines,
-          lastFailure.dumpContext,
-        )
-      }
-
-      throw terminalFetchError(lastError, 'All Antigravity accounts failed')
+      return terminalMainAttemptFailure('All Antigravity accounts failed')
     }
   }
 
@@ -3592,7 +4048,9 @@ export function createRequestExecutor<A extends RequestAccountRow>(
   function dispose(): Promise<void> {
     disposePromise ??= (async () => {
       retired = true
-      shutdown.abort(new Error('The Antigravity request executor is disposed'))
+      shutdown.abort(
+        new HostRefusalError('The Antigravity request executor is disposed'),
+      )
       await drain()
     })()
     return disposePromise
@@ -3602,11 +4060,11 @@ export function createRequestExecutor<A extends RequestAccountRow>(
     execute(input, init, requestOptions) {
       if (shutdown.signal.aborted)
         return Promise.reject(
-          new Error('The Antigravity request executor is disposed'),
+          new HostRefusalError('The Antigravity request executor is disposed'),
         )
       if (retired)
         return Promise.reject(
-          new Error('The Antigravity request executor is retired'),
+          new HostRefusalError('The Antigravity request executor is retired'),
         )
       const requestedSignal =
         init?.signal ?? (input instanceof Request ? input.signal : undefined)
@@ -3633,6 +4091,16 @@ export function createRequestExecutor<A extends RequestAccountRow>(
       } = {}
       const selectedCredentials = new Set<string>()
       const selectedProjectIds = new Set<string>()
+      const redactFailure = (error: unknown) => {
+        const redacted = redactCredentialError(
+          error,
+          [...selectedCredentials],
+          [...selectedProjectIds],
+        )
+        return isUpstreamFailure(error)
+          ? markUpstreamFailure(redacted)
+          : redacted
+      }
       const pending = withRoutingWaitReports(cancellation.signal, (waits) =>
         deadline.wait(() =>
           execute(
@@ -3702,22 +4170,14 @@ export function createRequestExecutor<A extends RequestAccountRow>(
             handoff.cancel()
             deadline.dispose()
             cancellation.release()
-            throw redactCredentialError(
-              error,
-              [...selectedCredentials],
-              [...selectedProjectIds],
-            )
+            throw redactFailure(error)
           },
         )
         .catch((error: unknown) => {
           handoff.cancel()
           deadline.dispose()
           cancellation.release()
-          throw redactCredentialError(
-            error,
-            [...selectedCredentials],
-            [...selectedProjectIds],
-          )
+          throw redactFailure(error)
         })
       inFlight.add(pending)
       void pending.then(

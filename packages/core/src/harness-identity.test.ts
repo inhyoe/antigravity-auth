@@ -4,6 +4,14 @@ import * as core from './index.ts'
 
 describe('harness identity rewrite', () => {
   const rows = [
+    [
+      'await tools.opencode.session_move({ directory: "." })',
+      'await tools[\'opencode\'].session_move({ directory: "." })',
+    ],
+    [
+      'tools.opencode.worktree_list(); tools.opencode.list_mcp_resources()',
+      "tools['opencode'].worktree_list(); tools['opencode'].list_mcp_resources()",
+    ],
     ...realPrompts.map(({ input, output }) => [input, output] as const),
     ['You are opencode.', 'You are a coding assistant.'],
     ['You are OpenCode!', 'You are a coding assistant!'],
@@ -20,6 +28,27 @@ describe('harness identity rewrite', () => {
       'running inside your development environment',
     ],
     [
+      'You are an AI agent running in OpenCode, a coding agent harness. Help the user accomplish their goals using the tools you have available.',
+      'You are an AI agent running inside your development environment. Help the user accomplish their goals using the tools you have available.',
+    ],
+    [
+      'RUNNING IN OPENCODE, A CODING AGENT HARNESS',
+      'running inside your development environment',
+    ],
+    [
+      'You are a coding assistant running in pi. Help users.',
+      'You are a coding assistant running inside your development environment. Help users.',
+    ],
+    [
+      'You are a coding assistant running in Pi-Bolt. Help users.',
+      'You are a coding assistant running inside your development environment. Help users.',
+    ],
+    ['running in opencode', 'running inside your development environment'],
+    [
+      'You are an AI agent running in OpenCode, a coding agent harness. Use tools.opencode.session_move() and tools.opencode.worktree_list().',
+      "You are an AI agent running inside your development environment. Use tools['opencode'].session_move() and tools['opencode'].worktree_list().",
+    ],
+    [
       'running inside opencode.',
       'running inside your development environment.',
     ],
@@ -34,7 +63,7 @@ describe('harness identity rewrite', () => {
     ],
     [
       'You are a coding assistant running inside pi, a coding agent harness. Help users…',
-      'You are a coding assistant running inside your development environment. Help users…',
+      'You are a coding assistant. Help users…',
     ],
     [
       'You are a coding assistant running inside pi.',
@@ -46,7 +75,7 @@ describe('harness identity rewrite', () => {
     ],
     [
       'You are a coding assistant running inside Pi-Bolt, a build of pi (a coding agent harness) compiled ahead of time. Help users.',
-      'You are a coding assistant running inside your development environment. Help users.',
+      'You are a coding assistant. Help users.',
     ],
     ['RUNNING INSIDE PI', 'running inside your development environment'],
     ['running inside Pi-Bolt.', 'running inside your development environment.'],
@@ -65,6 +94,19 @@ describe('harness identity rewrite', () => {
   }
   for (const input of [
     'running inside your development environment',
+    "tools['opencode'].session_move",
+    'tools.opencodex.session_move',
+    'tools.other.session_move',
+    'tools.opencodex.x',
+    "tools['opencode'].x",
+    'running in opencode.json',
+    'running in pi.js',
+    'running in opencode-foo',
+    'The user works in OpenCode',
+    'The user works in OpenCode and prefers short answers.',
+    '~/.config/opencode/opencode.jsonc',
+    'running in production',
+    'running in OpenCodeX',
     'running inside a coding agent harness',
     'You are a coding assistant. The project is called pi.',
     'running inside pi.js',

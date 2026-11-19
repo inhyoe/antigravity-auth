@@ -22,6 +22,11 @@ import {
 } from '@earendil-works/pi-ai'
 import type { ProviderConfig } from '@earendil-works/pi-coding-agent'
 import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent'
+import {
+  hostFileError,
+  hostFileErrorKinds,
+  retryHintPath,
+} from '../../../test/support/host-file-errors.test.ts'
 import { vaultWaitClock } from '../../../test/support/vault-wait-clock.test.ts'
 import opusLow from '../../../test-fixtures/agy-cli-1.3.3/native-opus-low.json'
 import sonnetLow from '../../../test-fixtures/agy-cli-1.3.3/native-sonnet-low.json'
@@ -33,7 +38,9 @@ import {
   signature,
   toolNames,
 } from '../../../test-fixtures/agy-cli-1.5.8/assert-identity.test'
+import stockPiPrompt from '../../../test-fixtures/pi-1.5.2-system-prompt.json'
 import { outageVault } from '../../core/src/__fixtures__/vault-outage.ts'
+import { expectNoOpenCodeRetryHints } from '../../opencode/src/plugin/__fixtures__/opencode-retry-hints.test.ts'
 import { rememberPackedRefresh } from './credential-cache.ts'
 
 const ensureProjectContextMock = mock(async () => ({
@@ -149,6 +156,32 @@ function userContext(): Context {
   return { messages: [{ role: 'user', content: 'test', timestamp: 1 }] }
 }
 
+it.each(
+  hostFileErrorKinds,
+)('keeps a Pi model call %s error out of the error event', async (kind) => {
+  const error = await hostFileError(kind)
+  const logs: unknown[] = []
+  actualCore.setLogSink((record) => logs.push(record))
+  try {
+    const result = await streamCortexKitAntigravity(
+      fakeModel(),
+      userContext(),
+      { apiKey: 'test-token' },
+      async () => {
+        throw error
+      },
+    ).result()
+    expect(result.stopReason).toBe('error')
+    expectNoOpenCodeRetryHints(result.errorMessage ?? '')
+    expect(result.errorMessage).not.toContain('x.json')
+    expect(
+      logs.filter((record) => JSON.stringify(record).includes(retryHintPath)),
+    ).toHaveLength(1)
+  } finally {
+    actualCore.setLogSink(null)
+  }
+})
+
 function observeCallerListeners(signal: AbortSignal) {
   const listeners = new Set<EventListenerOrEventListenerObject>()
   const add = signal.addEventListener.bind(signal)
@@ -246,8 +279,7 @@ function terminalTextResponse(): Response {
 
 describe('selected credential boundary', () => {
   it('sends identical rewritten harness instructions on consecutive turns of one Pi session', async () => {
-    const phrase =
-      'You are a coding assistant running inside pi, a coding agent harness.'
+    const phrase = stockPiPrompt.input.join('\n')
     const bodies: Record<string, any>[] = []
     fetchWithAgyCliTransportMock.mockImplementation(
       async (_url: string, init: RequestInit) => {
@@ -275,8 +307,15 @@ describe('selected credential boundary', () => {
     expect(bodies[0]!.systemInstruction.parts[0].text).toBe(
       'You are a coding agent.',
     )
+    // Relocated: upstream's sanitized prompt (with the fork's default-phrase
+    // neutralization) prepended to the first user message ('test').
     expect(bodies[0]!.contents[0].parts[0].text).toBe(
-      'You are a coding assistant running inside your development environment.\n\ntest',
+      `${stockPiPrompt.output
+        .join('\n')
+        .replace(
+          'Help users inspect files, run commands, and modify code.',
+          'Assist users with inspecting files, running commands, and modifying code.',
+        )}\n\ntest`,
     )
     expect(JSON.stringify(bodies[1]!.systemInstruction)).toBe(
       JSON.stringify(bodies[0]!.systemInstruction),
@@ -304,7 +343,30 @@ describe('selected credential boundary', () => {
     expect(events.map((event) => event.type)).toEqual(['start', 'error'])
     expect(fetchWithAgyCliTransportMock).toHaveBeenCalledTimes(1)
     expect(result.errorMessage).toBe(
-      'Antigravity could not confirm a temporary request limit. Try again later or change the agent system prompt.',
+      'Antigravity refused the request without a stated reason. If this keeps happening, change the agent system prompt or wait before sending another request.',
+    )
+    expect(result.errorMessage).not.toMatch(/429|500|502|503|504|524/)
+  })
+
+  it('terminates the exact Google message-only refusal as unconfirmed', async () => {
+    const { events, result } = await runStream(
+      fakeModel(),
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 429,
+            message: 'Resource has been exhausted (e.g. check quota).',
+            status: 'RESOURCE_EXHAUSTED',
+          },
+        }),
+        { status: 429 },
+      ),
+      'message-only-pi',
+    )
+    expect(events.map((event) => event.type)).toEqual(['start', 'error'])
+    expect(fetchWithAgyCliTransportMock).toHaveBeenCalledTimes(1)
+    expect(result.errorMessage).toBe(
+      'Antigravity refused the request without a stated reason. If this keeps happening, change the agent system prompt or wait before sending another request.',
     )
     expect(result.errorMessage).not.toMatch(/429|500|502|503|504|524/)
   })
@@ -363,7 +425,7 @@ describe('selected credential boundary', () => {
       expect(fetchWithAgyCliTransportMock).toHaveBeenCalledTimes(1)
       expect(result.stopReason).toBe('error')
       expect(result.errorMessage).toBe(
-        'Antigravity could not confirm a temporary request limit. Try again later or change the agent system prompt.',
+        'Antigravity refused the request without a stated reason. If this keeps happening, change the agent system prompt or wait before sending another request.',
       )
       expect(result.errorMessage).not.toMatch(/429|500|502|503|504|524/)
     } finally {
@@ -388,7 +450,8 @@ describe('selected credential boundary', () => {
         userContext(),
         { apiKey: 'test-token' },
         async () => {
-          if (!admitted) throw new Error('local enrollment changed')
+          if (!admitted)
+            throw new actualCore.HostRefusalError('local enrollment changed')
         },
       ),
     )
@@ -508,7 +571,7 @@ describe('selected credential boundary', () => {
 
     expect(result.stopReason).toBe('error')
     expect(result.errorMessage).not.toContain(projectId)
-    expect(result.errorMessage).toContain('my-r****3456')
+    expect(result.errorMessage).not.toContain('my-r****3456')
     expect(fetchWithAgyCliTransportMock).not.toHaveBeenCalled()
   })
 

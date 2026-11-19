@@ -7,6 +7,7 @@ import {
   type Tool,
   Type,
 } from '@earendil-works/pi-ai'
+import stockPiPrompt from '../../../test-fixtures/pi-1.5.2-system-prompt.json'
 
 import { buildGeminiRequest } from './convert.ts'
 
@@ -37,8 +38,7 @@ function assistant(
 
 describe('buildGeminiRequest', () => {
   it('rewrites harness identity only in systemInstruction for flat and transcript contexts', () => {
-    const phrase =
-      'You are a coding assistant running inside pi, a coding agent harness.'
+    const phrase = stockPiPrompt.input.join('\n')
     const context = ctx({
       systemPrompt: phrase,
       tools: [
@@ -75,7 +75,14 @@ describe('buildGeminiRequest', () => {
       })
       expect(request.contents[0]?.parts).toEqual([
         {
-          text: `You are a coding assistant running inside your development environment.\n\n${phrase}`,
+          // Relocated: upstream's sanitized prompt (with the fork's default-phrase
+          // neutralization) prepended to the first user message.
+          text: `${stockPiPrompt.output
+            .join('\n')
+            .replace(
+              'Help users inspect files, run commands, and modify code.',
+              'Assist users with inspecting files, running commands, and modifying code.',
+            )}\n\n${phrase}`,
         },
       ])
       expect(request.contents[1]?.parts).toEqual([{ text: phrase }])
@@ -752,6 +759,38 @@ describe('Pi tool schema wire normalization', () => {
     return JSON.parse(JSON.stringify(request)).tools[0].functionDeclarations[0]
       .parameters
   }
+
+  it('converts multi-type tool parameters through the shared Gemini converter', () => {
+    expect(
+      parameters({
+        type: 'object',
+        properties: {
+          trigger: {
+            type: ['object', 'array', 'string', 'number', 'boolean', 'null'],
+            description: 'flow trigger',
+          },
+          value: { type: ['string', 'number'] },
+          input: {
+            type: ['array', 'string'],
+            items: { type: 'integer' },
+            minLength: 2,
+          },
+        },
+      }),
+    ).toEqual({
+      type: 'OBJECT',
+      properties: {
+        trigger: { description: 'flow trigger', nullable: true },
+        value: { anyOf: [{ type: 'STRING' }, { type: 'NUMBER' }] },
+        input: {
+          anyOf: [
+            { type: 'ARRAY', items: { type: 'INTEGER' } },
+            { type: 'STRING', minLength: 2 },
+          ],
+        },
+      },
+    })
+  })
 
   it('normalizes nested non-string constants and enums', () => {
     expect(

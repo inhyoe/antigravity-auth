@@ -19,14 +19,22 @@ import type {
 import {
   ANTIGRAVITY_ENDPOINT_DAILY,
   createAntigravityVaultAccountSource,
+  HostRefusalError,
   loadCommonAuthClaustrum,
+  setLogSink,
   VAULT_ACCOUNT_REMEDY,
 } from '@cortexkit/antigravity-auth-core'
+import {
+  hostFileError,
+  hostFileErrorKinds,
+  retryHintPath,
+} from '../../../../test/support/host-file-errors.test.ts'
 import { vaultWaitClock } from '../../../../test/support/vault-wait-clock.test.ts'
 import {
   keptReceipts,
   outageVault,
 } from '../../../core/src/__fixtures__/vault-outage.ts'
+import { expectNoOpenCodeRetryHints } from './__fixtures__/opencode-retry-hints.test'
 import { AccountManager, loadAccountManagerFromRepository } from './accounts'
 import { createAuthLoader } from './auth-loader'
 import { AntigravityConfigSchema, DEFAULT_CONFIG } from './config'
@@ -125,17 +133,13 @@ async function expectNativeFailure(
   expect(body).toEqual({
     error: { code: status, status: googleStatus, message: expect.any(String) },
   })
+  if (status < 500) expectNoOpenCodeRetryHints(text)
   expect(text).not.toMatch(/candidates|finishReason|usageMetadata|data:/)
   return text
 }
 
 function expectFailFastBody(text: string): void {
-  // OpenCode 1.x's native retry classifier searches serialized error text for
-  // retryable HTTP-status substrings even when the response itself is 412.
-  // Checking the body alongside status prevents accidental host retries.
-  expect(text).not.toMatch(
-    /429|500|502|503|504|524|rate limited|rate_limit|resource_exhausted|try again later/i,
-  )
+  expectNoOpenCodeRetryHints(text)
   expect(text).not.toMatch(/account-a|account-b|refresh-a|refresh-b|access-a/)
 }
 
@@ -891,7 +895,7 @@ describe('createFetchInterceptor', () => {
               'FAILED_PRECONDITION',
             )
             expect(JSON.parse(text).error.message).toBe(
-              'Antigravity account pool is unavailable under the quota protection policy. Add accounts, wait for quota reset, or turn off soft quota protection with `"soft_quota_threshold_percent": 100` in antigravity-auth.jsonc.',
+              'Antigravity account pool is blocked by quota protection. Add accounts, wait for quota reset, or turn off soft quota protection with `"soft_quota_threshold_percent": 100` in antigravity-auth.jsonc.',
             )
             expectFailFastBody(text)
             expect(transportMock).not.toHaveBeenCalled()
@@ -975,7 +979,7 @@ describe('createFetchInterceptor', () => {
             412,
             'FAILED_PRECONDITION',
           )
-          expect(text).toContain('quota protection policy')
+          expect(text).toContain('blocked by quota protection')
           expectFailFastBody(text)
           if (resetTime?.endsWith('Z')) {
             expect(text).toContain('Quota resets in 1h 35m')
@@ -2085,8 +2089,6 @@ describe('createFetchInterceptor', () => {
     })
 
     describe('a request when the approved vault serves no accounts', () => {
-      const GRANT =
-        'ck auth grant --principal enrolled:antigravity-auth-opencode --selector-kind category --selector antigravity-native --operation read'
       const CATEGORY_GRANT = [
         {
           selectorKind: 'category',
@@ -2195,14 +2197,11 @@ describe('createFetchInterceptor', () => {
         body: { error: { code: 401, message, status: 'UNAUTHENTICATED' } },
       })
 
-      it('says no grant exists and gives the grant command when the vault reports zero grants', async () => {
+      it('says no grant exists and points to the Vault menu without naming the enrollment', async () => {
         const { refusal } = await requestOnEmptyVault(0, [])
         expect(refusal).toEqual(
           noAccountRefusal(
-            [
-              'Vault access is approved. The vault has not granted antigravity-auth-opencode read access.',
-              `The vault operator grants it with: ${GRANT}`,
-            ].join('\n'),
+            'Vault access is approved, but the vault has not granted this plugin read access. Open the Vault section of the Antigravity menu for grant instructions.',
           ),
         )
         expect(transportMock).not.toHaveBeenCalled()
@@ -2213,7 +2212,7 @@ describe('createFetchInterceptor', () => {
         expect(refusal).toEqual(
           noAccountRefusal(
             [
-              'Vault access is approved. antigravity-auth-opencode has read access, but it reaches no Antigravity login in the vault.',
+              'Vault access is approved, but the read grant reaches no Antigravity login in the vault.',
               "The vault operator updates the vault's logins with: ck auth reclassify --from-registry",
               'Then they check them with: ck auth status',
             ].join('\n'),
@@ -2274,6 +2273,67 @@ describe('createFetchInterceptor', () => {
   })
 
   describe('per-instance isolation', () => {
+    it('ends a reasonless refusal after three upstream requests without host retry hints', async () => {
+      let now = FIXED_NOW
+      spyOn(Date, 'now').mockImplementation(() => now)
+      const realSetTimeout = globalThis.setTimeout
+      const waits: number[] = []
+      // Advance only the refusal cooldowns; leave disk work and deadlines on
+      // the real event loop so this still exercises the interceptor's waits.
+      spyOn(globalThis, 'setTimeout').mockImplementation(((
+        callback: (...args: unknown[]) => void,
+        ms: number,
+        ...args: unknown[]
+      ) =>
+        realSetTimeout(
+          () => {
+            if (ms === 5_000) {
+              waits.push(ms)
+              now += ms
+            }
+            callback(...args)
+          },
+          ms === 5_000 ? 0 : ms,
+        )) as typeof setTimeout)
+      transportHandler = async () =>
+        new Response(JSON.stringify({ error: { message: 'Refused' } }), {
+          status: 429,
+          headers: { 'content-type': 'application/json' },
+        })
+      const interceptor = createFetchInterceptor(
+        await makeContext({
+          config: {
+            ...DEFAULT_CONFIG,
+            request_jitter_max_ms: 0,
+            quota_refresh_interval_minutes: 0,
+            proactive_rotation_threshold_percent: 0,
+            cache_warmup_on_switch: false,
+            thinking_warmup: false,
+          },
+        }),
+      )
+      try {
+        const response = await interceptor.fetch(
+          GENERATIVE_URL,
+          GENERATIVE_INIT,
+        )
+        const text = await expectNativeFailure(
+          response,
+          412,
+          'FAILED_PRECONDITION',
+        )
+        expect(transportMock).toHaveBeenCalledTimes(3)
+        expect(waits).toEqual([5_000, 5_000])
+        const { error } = JSON.parse(text)
+        expect(error.message).toContain('without a stated reason')
+        expect(error.message).not.toMatch(/\d+/)
+        expectNoOpenCodeRetryHints(error.message)
+        expectNoOpenCodeRetryHints(text)
+      } finally {
+        await interceptor.dispose()
+      }
+    })
+
     it('two interceptors do not share rate-limit state', async () => {
       let now = FIXED_NOW
       const clock = spyOn(Date, 'now').mockImplementation(() => now)
@@ -2313,7 +2373,16 @@ describe('createFetchInterceptor', () => {
       transportHandler = async () =>
         new Response(
           JSON.stringify({
-            error: { code: 429, message: 'rate limit exceeded' },
+            error: {
+              code: 429,
+              message: 'rate limit exceeded',
+              details: [
+                {
+                  '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+                  reason: 'RATE_LIMIT_EXCEEDED',
+                },
+              ],
+            },
           }),
           {
             status: 429,
@@ -2358,12 +2427,47 @@ describe('createFetchInterceptor', () => {
   })
 })
 
+it.each(
+  hostFileErrorKinds,
+)('keeps a model fetch %s error out of the host rejection', async (kind) => {
+  const error = await hostFileError(kind)
+  const context = await makeContext({
+    assertAdmission: async () => {
+      throw error
+    },
+  })
+  const interceptor = createFetchInterceptor(context)
+  const logs: unknown[] = []
+  setLogSink((record) => logs.push(record))
+  try {
+    const rejection = await interceptor
+      .fetch(GENERATIVE_URL, GENERATIVE_INIT)
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+    expect(rejection).toBeInstanceOf(Error)
+    expectNoOpenCodeRetryHints(String(rejection))
+    expect(String(rejection)).not.toContain('x.json')
+    expect(
+      logs.filter((record) => JSON.stringify(record).includes(retryHintPath)),
+    ).toHaveLength(1)
+  } finally {
+    setLogSink(null)
+    await interceptor.dispose()
+    await context.accountManager.dispose()
+  }
+})
+
 it('admits no further local physical attempt when enrollment changes during a failed send', async () => {
   let local = true
   let physicalAttempts = 0
+  const admissionError = new HostRefusalError(
+    'Local work is excluded by vault enrollment',
+  )
   const context = await makeContext({
     assertAdmission: async () => {
-      if (!local) throw new Error('Local work is excluded by vault enrollment')
+      if (!local) throw admissionError
     },
     agyTransport: async () => {
       physicalAttempts += 1
@@ -2391,9 +2495,9 @@ it('admits no further local physical attempt when enrollment changes during a fa
   })
   const interceptor = createFetchInterceptor(context)
   try {
-    await expect(
-      interceptor.fetch(GENERATIVE_URL, GENERATIVE_INIT),
-    ).rejects.toThrow('Local work is excluded by vault enrollment')
+    const pending = interceptor.fetch(GENERATIVE_URL, GENERATIVE_INIT)
+    await expect(pending).rejects.toThrow(admissionError.message)
+    await expect(pending).rejects.toBe(admissionError)
     expect(physicalAttempts).toBe(1)
   } finally {
     await interceptor.dispose()

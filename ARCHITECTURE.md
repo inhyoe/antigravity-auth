@@ -87,7 +87,7 @@ Authority is read at the start of each unit of work, and again before a credenti
 **Host slots.**
 - **OpenCode 1** needs some saved `google` auth record before it loads the provider at all. In vault and host mode the plugin never reads or refreshes that record.
 - **OpenCode 2** owns a request only when its prepared `x-goog-api-key` equals common-auth's `placeholderSecret('google')`. The "Use approved Antigravity vault" login installs that placeholder.
-- **Pi** saves its native `google` login in a stash and installs the placeholder, holding Pi's `auth.json` lock (common-auth `pi-slot`). It restores the saved login on leaving vault or host mode, only if the slot still holds the placeholder. If startup can't reach a consistent state, Pi registers a refusing `google` provider and keeps `/antigravity` for recovery.
+- **Pi** replaces its native `google` login with the placeholder, holding Pi's `auth.json` lock (common-auth `pi-slot`), without saving the login. On leaving vault or host mode it removes the placeholder; local use requires `/login google` again. A changed entry is left alone, and legacy saved-login files are deleted without reading them. If startup can't reach a consistent state, Pi registers a refusing `google` provider and keeps `/antigravity` for recovery.
 
 ## Storage and files
 
@@ -137,7 +137,7 @@ Pollers coordinate across processes with a freshness check and an advisory lock.
 
 **Remembered refusals.** A structured `NOT_FOUND` for a model marks that account as unable to serve that model for an hour, or until a new quota reading. This is per request engine.
 
-**Routing.** In vault mode on OpenCode, when Claustrum's routing service is present (`cortexkit.routing` accessor), the engine asks it which account a session's first primary request should use. It falls back to its own choice when routing is late or names an unusable account. It reports `served` after a clean finish, and `exhausted` (with `pool` and window) only for a `QUOTA_EXHAUSTED` 429 backed by a dated 0% reading (`packages/opencode/src/plugin/shared/vault-routing.ts`).
+**Routing.** In vault mode on OpenCode, when Claustrum's routing service is present (`cortexkit.routing` accessor), the engine asks it which account the first model request for each session and model family should use, regardless of request kind. Titles reuse an eligible pin without changing it, or ask without setting one. Internal warmups and cache probes reuse the current request's account without asking. The engine matches routing's choice by vault account and credential ID against the current roster, falls back to local selection if the answer is late or unusable, and does not proactively switch accounts on success. It reports `served` after a clean finish, and `exhausted` (with `pool` and window) only for a `QUOTA_EXHAUSTED` 429 backed by a dated 0% reading (`packages/opencode/src/plugin/shared/vault-routing.ts`).
 
 ## Renderers
 
@@ -176,7 +176,7 @@ The library is embedded so that each release ships exactly the library bytes it 
 - `bun run smoke:tui`: installs the packed package into a fresh consumer and loads both renderers.
 - **CI** (`.github/workflows/ci.yml`): typecheck, build, TUI smoke, unit, e2e, the OpenCode 2 Docker smoke, format and lint, plus the status-server contracts on Node 20, Node 24, Bun 1.3.14 and Bun 1.4.2. **Windows** (`windows-migration.yml`) runs store migration, relocation and real vault enrollment on two Windows versions.
 - `bun run test:native-inert`: the release gate, run on MOTOR Linux. It runs the toolchain checks, the core build, the strict typechecks, a scoped lint, and the portable and MOTOR test suites. It only cleans up processes inside a verified private sandbox, and refuses everywhere else.
-- `bun run prepush`: the local gate before pushing (`scripts/prepush.sh`). The fast phase runs frozen installs, the embedding checks, format, lint and four repo guards: the disk-test list, the renderer import graph, synchronous spawns and shell exit traps. The full phase then runs typecheck, build, the TUI smoke, `test` and `test:e2e` in one MOTOR job (`--full-here` runs it on the current machine).
+- `bun run prepush`: the local gate before pushing (`scripts/prepush.sh`). The fast phase runs frozen installs, the embedding checks, format, lint and five repo guards: source file sizes, the disk-test list, the renderer import graph, synchronous spawns and shell exit traps. The full phase then runs typecheck, build, the TUI smoke, `test` and `test:e2e` in one MOTOR job (`--full-here` runs it on the current machine).
 
 **Releasing:**
 1. `scripts/release.sh --prepare <version>` makes the version-only commit.

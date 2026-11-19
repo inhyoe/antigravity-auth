@@ -99,6 +99,7 @@ test('prepush --fast runs static guards without a build or remote submission', a
     'bun run embed:check',
     'bun run format:check',
     'bun run lint',
+    'bun scripts/check-file-sizes.ts',
     'bun test --isolate ./test/test-root.test.ts',
     'bun test --isolate ./packages/opencode/src/plugin/shared/import-graph.test.ts',
     'bun test --isolate ./test/sync-spawn-guard.test.ts',
@@ -164,9 +165,9 @@ test('prepush submits exactly one sequential Linux job and certifies the commit'
   expect(calls.filter((line) => line.startsWith('ck '))).toEqual([
     `ck motor run --vcpus 16 --net --cwd ${root} -- bash scripts/prepush.sh --full-here ${commit}`,
   ])
-  // The first eleven calls are the ten `--fast` checks listed in the test
+  // The first twelve calls are the eleven `--fast` checks listed in the test
   // above, then the one ck submission; the full phase's calls follow.
-  expect(calls.slice(11)).toEqual([
+  expect(calls.slice(12)).toEqual([
     'bun install --frozen-lockfile',
     'bun packages/opencode/scripts/embed-common-auth.ts --check',
     'bun install --cwd tools/common-auth-build --frozen-lockfile --ignore-scripts',

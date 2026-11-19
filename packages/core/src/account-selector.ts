@@ -542,6 +542,7 @@ export function refreshSelectableRow<A extends SelectableAccount>(
 interface AccountSessionState {
   parentId: string | null
   currentAccountIndexByFamily: Record<ModelFamily, number>
+  routedByFamily: Record<ModelFamily, boolean>
   cursorByFamily: Record<ModelFamily, number>
   offsetAppliedByFamily: Record<ModelFamily, boolean>
   usedAccounts: Set<number>
@@ -925,6 +926,7 @@ export class AccountSelector<A extends SelectableAccount> {
     const state: AccountSessionState = {
       parentId: identity.parentId ?? null,
       currentAccountIndexByFamily: { claude: -1, gemini: -1 },
+      routedByFamily: { claude: false, gemini: false },
       cursorByFamily: { ...this.cursorByFamily },
       offsetAppliedByFamily: { claude: false, gemini: false },
       usedAccounts: new Set<number>(),
@@ -977,6 +979,7 @@ export class AccountSelector<A extends SelectableAccount> {
     family: ModelFamily,
     index: number,
     identity?: AccountSessionIdentity,
+    routed = false,
   ): void {
     if (!identity) {
       this.setGlobalActiveIndex(family, index)
@@ -985,6 +988,7 @@ export class AccountSelector<A extends SelectableAccount> {
 
     const state = this.getRequestSessionState(identity)
     state.currentAccountIndexByFamily[family] = index
+    state.routedByFamily[family] = routed
     if (!state.parentId) {
       // Preserve a useful persisted starting point without coupling active root sessions.
       this.setGlobalActiveIndex(family, index)
@@ -1069,6 +1073,35 @@ export class AccountSelector<A extends SelectableAccount> {
     return null
   }
 
+  getRoutedAccountForFamily(
+    family: ModelFamily,
+    identity: AccountSessionIdentity,
+  ): A | null {
+    return this.getRequestSessionState(identity).routedByFamily[family]
+      ? this.getCurrentAccountForFamily(family, identity)
+      : null
+  }
+
+  /** Use a roster row already admitted by routing, without local quota or retry filters. */
+  useRoutedAccount(
+    account: A,
+    family: ModelFamily,
+    model: string | undefined,
+    identity: AccountSessionIdentity,
+    pinSelection: boolean,
+  ): A | null {
+    if (
+      this.accounts[account.index] !== account ||
+      account.enabled === false ||
+      account.accountIneligible ||
+      account.verificationRequired
+    )
+      return null
+    this.markTouchedForQuota(account, getQuotaKey(family, model))
+    if (pinSelection) this.setActiveIndex(family, account.index, identity, true)
+    return account
+  }
+
   /**
    * Numeric active indexes for each model family. Exposed so callers
    * that persist `activeIndexByFamily` (e.g. command-data's remove
@@ -1134,6 +1167,8 @@ export class AccountSelector<A extends SelectableAccount> {
      * wait path.
      */
     excludeIndexes?: Set<number>,
+    /** Titles can use the current pin or select an account without writing a pin. */
+    pinSelection = true,
   ): A | null {
     const quotaKey = getQuotaKey(family, model)
     const effectiveSoftQuotaThreshold = this.getEffectiveSoftQuotaThreshold(
@@ -1160,6 +1195,8 @@ export class AccountSelector<A extends SelectableAccount> {
           ) ||
           this.isAccountCoolingDown(pinned)
         if (!unavailable) {
+          if (pinSelection)
+            this.getRequestSessionState(identity).routedByFamily[family] = false
           this.markTouchedForQuota(pinned, quotaKey)
           return pinned
         }
@@ -1177,7 +1214,7 @@ export class AccountSelector<A extends SelectableAccount> {
       )
       if (next) {
         this.markTouchedForQuota(next, quotaKey)
-        this.setActiveIndex(family, next.index, identity)
+        if (pinSelection) this.setActiveIndex(family, next.index, identity)
       }
       return next
     }
@@ -1243,7 +1280,8 @@ export class AccountSelector<A extends SelectableAccount> {
         if (selected) {
           this.touchLastUsed(selected)
           this.markTouchedForQuota(selected, quotaKey)
-          this.setActiveIndex(family, selected.index, identity)
+          if (pinSelection)
+            this.setActiveIndex(family, selected.index, identity)
           return selected
         }
       }
@@ -1255,6 +1293,7 @@ export class AccountSelector<A extends SelectableAccount> {
     const offsetApplied = identity
       ? this.getRequestSessionState(identity).offsetAppliedByFamily
       : this.sessionOffsetApplied
+    let temporaryIndex: number | undefined
     if (
       pidOffsetEnabled &&
       !offsetApplied[family] &&
@@ -1274,11 +1313,19 @@ export class AccountSelector<A extends SelectableAccount> {
         toIndex: newIndex,
       })
 
-      this.setActiveIndex(family, newIndex, identity)
-      offsetApplied[family] = true
+      if (pinSelection) {
+        this.setActiveIndex(family, newIndex, identity)
+        offsetApplied[family] = true
+      } else {
+        // The temporary starting point must not replace the session's pin.
+        temporaryIndex = newIndex
+      }
     }
 
-    const current = this.getCurrentAccountForFamily(family, identity)
+    const current =
+      temporaryIndex === undefined
+        ? this.getCurrentAccountForFamily(family, identity)
+        : (this.accounts[temporaryIndex] ?? null)
     const preferred = preferArgonAccounts(
       this.accounts.filter(
         (row) =>
@@ -1335,7 +1382,7 @@ export class AccountSelector<A extends SelectableAccount> {
     )
     if (next) {
       this.markTouchedForQuota(next, quotaKey)
-      this.setActiveIndex(family, next.index, identity)
+      if (pinSelection) this.setActiveIndex(family, next.index, identity)
     }
     return next
   }
@@ -1570,7 +1617,15 @@ export class AccountSelector<A extends SelectableAccount> {
 
     if (reason === 'UNKNOWN') {
       const backoffMs = calculateBackoffMs(reason, 0, retryAfterMs)
-      this.setRateLimit(account, getQuotaKey(family, model), now + backoffMs)
+      const key = getQuotaKey(family, model)
+      // An unconfirmed refusal never shortens an existing reset time: a longer
+      // one comes from a confirmed limit or a quota reading at 0%.
+      const resetAt = Math.max(
+        account.rateLimitResetTimes[key] ?? 0,
+        now + backoffMs,
+      )
+      if (resetAt !== account.rateLimitResetTimes[key])
+        this.setRateLimit(account, key, resetAt)
       return backoffMs
     }
 

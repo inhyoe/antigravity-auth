@@ -24,7 +24,7 @@ export const UNCONFIRMED_RATE_LIMIT_MIN_MS = 5_000
 export const UNCONFIRMED_RATE_LIMIT_MAX_MS = 30_000
 export const MAX_UNCONFIRMED_RATE_LIMIT_RETRIES = 2
 export const UNCONFIRMED_RATE_LIMIT_MESSAGE =
-  'Antigravity could not confirm a temporary request limit. Try again later or change the agent system prompt.'
+  'Antigravity refused the request without a stated reason. If this keeps happening, change the agent system prompt or wait before sending another request.'
 
 export function unconfirmedRateLimitDelayMs(
   retryAfter: string | null,
@@ -61,6 +61,8 @@ export function parseRateLimitReason(
       return normalized
     }
   }
+  // Message wording alone cannot confirm a quota or capacity limit for a 429.
+  if (status === 429) return 'UNKNOWN'
   if (message) {
     const normalized = message.toLowerCase()
     if (

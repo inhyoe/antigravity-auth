@@ -41,7 +41,13 @@ import type {
   SessionHttpRequest,
   SessionRetry,
 } from '@opencode/plugin/promise/session'
+import {
+  hostFileError,
+  hostFileErrorKinds,
+  retryHintPath,
+} from '../../../../../test/support/host-file-errors.test.ts'
 import { placeholderSecret } from '../../common-auth-embedded/opencode2/index.js'
+import { expectNoOpenCodeRetryHints } from '../../plugin/__fixtures__/opencode-retry-hints.test.ts'
 import { RELEASE_MODEL_IDS } from '../../plugin/__fixtures__/release-model-ids'
 
 type SenderCall = {
@@ -373,7 +379,7 @@ describe('loopback bridge', () => {
     expect(await response.text()).toBe('data: {"a":1}\n\ndata: {"b":2}\n\n')
   })
 
-  it('masks project IDs in pre-header bridge errors', async () => {
+  it('keeps project-resolution diagnostics out of pre-header bridge errors', async () => {
     const active = await start(async () => {
       throw new Error('Project: my-real-project-123456 could not be resolved')
     })
@@ -384,7 +390,8 @@ describe('loopback bridge', () => {
     expect(await response.json()).toEqual({
       error: {
         code: 502,
-        message: 'Project: my-r****3456 could not be resolved',
+        message:
+          'antigravity-auth could not complete the operation. Check the plugin log for details.',
         status: 'UNAVAILABLE',
       },
     })
@@ -392,7 +399,9 @@ describe('loopback bridge', () => {
 
   it('answers 502 with the original message for a failure before upstream headers', async () => {
     const active = await start(async () => {
-      throw new Error('connect ECONNREFUSED fake-endpoint')
+      throw realCore.markUpstreamFailure(
+        new Error('connect ECONNREFUSED fake-endpoint'),
+      )
     })
     const response = await fetch(
       active.rewrite(hostRequest(), JOB, NO_PROXY_ENV),
@@ -1239,6 +1248,53 @@ describe('hook bodies', () => {
     })
   }
 
+  it('names an off-catalog model at the ID length limit without suggesting an overlong twin', async () => {
+    const modelID = `team/model_v1.${'A'.repeat(113)}-`
+    expect(modelID).toHaveLength(128)
+    const active = await startBridge()
+    const event = requestEvent('primary', modelID)
+    await expect(
+      server.rewriteGaHttpRequest(event, {
+        bridge: active,
+        ownership,
+        isRegisteredModel: (id) => id === `antigravity-${modelID}`,
+        env: NO_PROXY_ENV,
+      }),
+    ).rejects.toThrow(
+      `This request cannot use Antigravity: google/${modelID} is not an Antigravity model. Choose a google/antigravity- model.`,
+    )
+  })
+
+  it.each([
+    ['retry digits', 'custom-500'],
+    ['a retry word', 'antigravity-UnAvAiLaBlE'],
+    ['a whole-ID retry hint', 'timeout'],
+    ['punctuation outside the model ID alphabet', 'custom:model'],
+    ['a trailing newline', 'custom\n'],
+    ['an ID longer than 128 characters', 'a'.repeat(129)],
+  ] as const)('omits an off-catalog model ID with %s', async (_label, modelID) => {
+    const active = await startBridge()
+    const event = requestEvent('primary', modelID)
+    const original = event.request
+    const refusal = await server
+      .rewriteGaHttpRequest(event, {
+        bridge: active,
+        ownership,
+        isRegisteredModel: registered,
+        env: NO_PROXY_ENV,
+      })
+      .catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(Error)
+    const message = (refusal as Error).message
+    expect(message).toBe(
+      'This request cannot use Antigravity. Choose a google/antigravity- model.',
+    )
+    expectNoOpenCodeRetryHints(message)
+    expect(event.request).toBe(original)
+    expect(active.pendingJobs()).toBe(0)
+    expect(retryFor(event.sessionID).decision).toEqual({ retry: false })
+  })
+
   it('keeps ordinary-model and non-content refusal text free of host retry digit runs', async () => {
     const active = await startBridge()
     const nonContent = new Request(
@@ -1886,8 +1942,46 @@ describe('setup against a host context', () => {
         fakeHost(locationDirectory('a'), log, { register: failure }),
         fakeServices(log),
       ),
-    ).rejects.toBe(failure)
+    ).rejects.toThrow(
+      'antigravity-auth could not complete the operation. Check the plugin log for details.',
+    )
     expect(log).toEqual(['dispose services'])
+  })
+
+  it.each(
+    hostFileErrorKinds,
+  )('keeps a GA setup %s error out of the host refusal', async (kind) => {
+    prepareRoot()
+    const error = await hostFileError(kind)
+    const logs: string[] = []
+    const lifecycle: string[] = []
+    const stderr = spyOn(process.stderr, 'write').mockImplementation((text) => {
+      logs.push(String(text))
+      return true
+    })
+    try {
+      const refusal = await server
+        .setupGaActivation(
+          fakeHost(locationDirectory('a'), lifecycle, { register: error }),
+          fakeServices(lifecycle),
+        )
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        )
+      expect(refusal).toBeInstanceOf(Error)
+      expectNoOpenCodeRetryHints(String(refusal))
+      expect(String(refusal)).not.toContain('x.json')
+      expect(
+        logs.filter(
+          (entry) =>
+            entry.includes('[antigravity]') && entry.includes(retryHintPath),
+        ),
+      ).toHaveLength(1)
+      expect(lifecycle).toEqual(['dispose services'])
+    } finally {
+      stderr.mockRestore()
+    }
   })
 
   it('rolls back already-registered hooks and RPC when a later hook fails', async () => {
@@ -1898,7 +1992,9 @@ describe('setup against a host context', () => {
         fakeHost(locationDirectory('a'), log, { hook: 'http.request' }),
         fakeServices(log),
       ),
-    ).rejects.toThrow('no hook http.request')
+    ).rejects.toThrow(
+      'antigravity-auth could not complete the operation. Check the plugin log for details.',
+    )
     expect(log).toEqual([
       'register antigravity-auth',
       'transform provider',

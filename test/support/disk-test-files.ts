@@ -3,6 +3,8 @@
 // even when a MOTOR job opts the other tests into its private /dev/shm mount.
 // Keep reasons here, and add new filesystem-sensitive suites conservatively.
 export const DISK_TEST_FILES: Readonly<Record<string, string>> = {
+  'test/common-auth-0530-candidate/pi-slot.test.ts':
+    'Pi slot durable auth writes, legacy-file deletion ordering, permissions, and symlink refusals.',
   'packages/opencode/src/plugin/config/loader.test.ts':
     'Real file and directory symlink identities determine shared controller keys.',
   'packages/opencode/src/settings/location.test.ts':
@@ -117,6 +119,8 @@ export const DISK_TEST_FILES: Readonly<Record<string, string>> = {
     'Real vault receipt waits use private-mode enrollment and roster files.',
   'packages/opencode/src/plugin/shared/vault-menu.test.ts':
     'Conservative: selector sync calls match the file-handle sync identifier fence.',
+  'packages/opencode/src/plugin/shared/vault-quota-provenance.test.ts':
+    'Real roster and provider-state locks, atomic writes, and private enrollment files for quota replacement regressions.',
   'packages/opencode/src/plugin/shared/vault-request-credentials.test.ts':
     'Conservative: selector sync calls match the file-handle sync identifier fence.',
   'packages/opencode/src/plugin/vault-insula-quota.test.ts':
@@ -133,6 +137,8 @@ export const DISK_TEST_FILES: Readonly<Record<string, string>> = {
     'Real lock leases, eviction markers and a slow real fsync to prove the store lock trace attributes time correctly.',
   'packages/opencode/src/plugin/__fixtures__/anchor-lock-trace.test.ts':
     'Store lock trace fixture that observes real lock, private-file and fsync calls.',
+  'packages/opencode/src/plugin/__fixtures__/runtime-layout-lock-trace.test.ts':
+    'Runtime layout trace fixture observes real leases, eviction-marker I/O and release retry timers.',
   'packages/opencode/src/plugin/__fixtures__/managed-store.test.ts':
     'Real store helper delegates filesystem lock acquisition.',
   'packages/opencode/src/plugin/__fixtures__/vault-menu-daemon.test.ts':

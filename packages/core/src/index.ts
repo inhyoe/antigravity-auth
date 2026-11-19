@@ -9,7 +9,11 @@ export type {
   AccountSessionIdentity,
   ManagedAccount,
 } from './account-manager.ts'
-export { AccountManager, resolveQuotaGroup } from './account-manager.ts'
+export {
+  AccountManager,
+  quotaAccountIdentity,
+  resolveQuotaGroup,
+} from './account-manager.ts'
 export * from './account-migration.ts'
 export * from './account-repository.ts'
 export * from './account-repository-codecs.ts'
@@ -39,6 +43,7 @@ export * from './fetch-timeout.ts'
 export * from './file-lock.ts'
 export * from './fingerprint.ts'
 export * from './harness-identity.ts'
+export * from './host-failure.ts'
 export * from './logger.ts'
 export * from './model-registry.ts'
 export * from './model-types.ts'

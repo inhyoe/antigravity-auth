@@ -151,6 +151,9 @@ export interface VaultAccountStateValue {
  * Computes the account's next state from its current one. The function must
  * be synchronous and must not start another commit. Return `undefined` to
  * leave the state as it is and `null` to remove the account's entry.
+ * Inherited quota is omitted when the route or credential changes, because a
+ * reading describes only the login it was taken under. Quota is kept when the
+ * route and credential stay the same, even if the vault record's version moves.
  */
 export type AntigravityVaultStateUpdate = (
   current: VaultAccountState | undefined,
@@ -594,6 +597,26 @@ export interface CommitVaultProviderStateInput {
   signal?: AbortSignal
 }
 
+/** A saved reading must not acquire a replacement route or credential's provenance. */
+function quotaBoundState(
+  current: VaultAccountState | undefined,
+  attribution: VaultStateAttribution,
+): VaultAccountState | undefined {
+  if (
+    current?.quota === undefined ||
+    (current.observed.routeId === attribution.routeId &&
+      current.observed.credentialId === attribution.credentialId)
+  )
+    return current
+  return Object.freeze({
+    observed: current.observed,
+    ...(current.metadata !== undefined ? { metadata: current.metadata } : {}),
+    ...(current.extensions !== undefined
+      ? { extensions: current.extensions }
+      : {}),
+  })
+}
+
 export async function commitVaultProviderState(
   input: CommitVaultProviderStateInput,
 ): Promise<VaultProviderStateCommitResult> {
@@ -616,7 +639,9 @@ export async function commitVaultProviderState(
           const file = await readVaultProviderState(statePath)
           input.signal?.throwIfAborted()
           const current = vaultAccountState(file, identity)
-          const requested: unknown = input.update(current)
+          const requested: unknown = input.update(
+            quotaBoundState(current, attribution),
+          )
           if (
             isRecord(requested) &&
             typeof (requested as { then?: unknown }).then === 'function'
@@ -830,7 +855,9 @@ export async function commitVaultProviderStates(
               ? accounts[identity]
               : undefined
             try {
-              const requested: unknown = entry.update(current)
+              const requested: unknown = entry.update(
+                quotaBoundState(current, entry.attribution),
+              )
               if (
                 isRecord(requested) &&
                 typeof (requested as { then?: unknown }).then === 'function'

@@ -43,6 +43,9 @@ In both cases OpenCode 2 sends Google requests itself instead of through the plu
 
 See [pool browser login](OPENCODE-2.md#pool-browser-login).
 
+### The Google sign-in list has no antigravity-auth methods
+From OpenCode 2.3, OpenCode lists Google before plugins finish loading. If you pick Google in the connect dialog in the first moment after OpenCode starts, that sign-in shows only Google's own API-key option. Go back and pick Google again, or reopen the dialog: the plugin's methods (pool browser login, paste redirect URL and the approved vault) are there once it has loaded. `opencode auth login` waits for plugins, so it always shows them.
+
 ### "This version of Antigravity is no longer supported"
 This almost always means an outdated Antigravity `User-Agent` is still being used.
 
@@ -163,7 +166,7 @@ Some MCP servers have schemas incompatible with Antigravity's strict JSON format
 
 ## Rate Limits, Shadow Bans, and Hanging Prompts
 
-**Pre-response timeout:** A logical generation request has a fixed, provisional **10-minute limit** while seeking an accepted main response's headers. It includes credential/project preparation, account waits, warmups, and retries across endpoints/accounts; it is not a configurable setting. Expiry produces a native HTTP 412 (`FAILED_PRECONDITION`) with “Antigravity did not begin a response within the pre-response time limit. Check your connection and try again later.” Pi uses its native error event. Check your connection/proxy before trying a new request. Cancellation is not converted to this error.
+**Pre-response timeout:** A logical generation request has a fixed, provisional **10-minute limit** while seeking an accepted main response's headers. It includes credential/project preparation, account waits, warmups, and retries across endpoints/accounts; it is not a configurable setting. Expiry produces a native HTTP 412 (`FAILED_PRECONDITION`) with “Antigravity did not begin a response within the pre-response time limit. Check your connection before sending another request.” Pi uses its native error event. Check your connection/proxy before trying a new request. Cancellation is not converted to this error.
 
 This is **not a first-visible-token guarantee**: after accepted main headers, the response body can keep streaming past ten minutes. An empty-response resend still uses the original deadline. Per-attempt header timers stay at 180 seconds, and body-idle watchdogs stay at 180 seconds in OpenCode 1/Pi and 300 seconds in GA. The separate cumulative no-eligible-account wait budget still resets on eligible selection; whichever limit expires first wins (quota policy wins a tie). A quota-wait value of `0` disables only that quota cap, not the fixed pre-response limit.
 

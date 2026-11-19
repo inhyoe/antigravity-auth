@@ -7,6 +7,17 @@ const HARNESS_IDENTITY_PARAGRAPHS = [
 ] as const
 const HARNESS_IDENTITY_REWRITES = [
   {
+    // Antigravity refuses requests carrying this stock Pi docs bullet with a
+    // false quota error. Remove its codemode clause, retaining other docs pointers.
+    pattern:
+      /^(- When asked about: extensions \(docs\/extensions\.md, examples\/extensions\/\), themes \(docs\/themes\.md\), skills \(docs\/skills\.md\), prompt templates \(docs\/prompt-templates\.md\), TUI components \(docs\/tui\.md\), keybindings \(docs\/keybindings\.md\), SDK integrations \(docs\/sdk\.md\), custom providers \(docs\/custom-provider\.md\), adding models \(docs\/models\.md\), packages \(docs\/packages\.md\), environment variables \(docs\/environment-variables\.md\), MCP servers \(docs\/mcp\.md\)), codemode scripts and non-LLM models such as classifiers and image models \(docs\/codemode\.md\)\n/gm,
+    replacement: '$1\n',
+  },
+  {
+    pattern: /\btools\.opencode\b/g,
+    replacement: "tools['opencode']",
+  },
+  {
     pattern: /You are opencode, /gi,
     replacement: 'You are ',
   },
@@ -20,6 +31,11 @@ const HARNESS_IDENTITY_REWRITES = [
   },
   {
     pattern:
+      /You are a coding assistant running inside (?:pi, a coding agent harness|Pi-Bolt, a build of pi \(a coding agent harness\) compiled ahead of time)\.(?=$|\s)/g,
+    replacement: 'You are a coding assistant.',
+  },
+  {
+    pattern:
       /running inside Pi-Bolt, a build of pi \(a coding agent harness\) compiled ahead of time/gi,
     replacement: 'running inside your development environment',
   },
@@ -28,12 +44,12 @@ const HARNESS_IDENTITY_REWRITES = [
     replacement: 'running inside your development environment',
   },
   {
-    pattern: /running inside opencode, a coding agent harness/gi,
+    pattern: /running (?:inside|in) opencode, a coding agent harness/gi,
     replacement: 'running inside your development environment',
   },
   {
     pattern:
-      /\brunning inside (?:pi-bolt|pi|opencode)(?!\.\w)(?=$|\s|[.,;:!?])/gi,
+      /\brunning (?:inside|in) (?:pi-bolt|pi|opencode)(?!\.\w)(?=$|\s|[.,;:!?])/gi,
     replacement: 'running inside your development environment',
   },
 ] as const

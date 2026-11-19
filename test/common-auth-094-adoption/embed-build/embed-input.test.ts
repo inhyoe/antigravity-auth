@@ -141,7 +141,7 @@ test('embed.integrity', async () => {
   const input = await readFile(join(root, inputPath))
   expect(hash(input)).toBe(publication.sha256)
   expect(sri(input)).toBe(publication.sri)
-  expect(readVerifiedArchive(input, publication).size).toBe(367)
+  expect(readVerifiedArchive(input, publication).size).toBe(371)
   expect(() =>
     readVerifiedArchive(input, { ...publication, sri: 'sha512-wrong' }),
   ).toThrow('integrity: SHA512 SRI mismatch')
@@ -184,7 +184,7 @@ test('embed.inventory', async () => {
     expect(hash(data)).toBe(String(digest))
     total += data.length
   }
-  expect(total).toBe(1465923)
+  expect(total).toBe(1475175)
   for (const [property, value, message] of [
     ['name', 'wrong', 'identity'],
     ['version', '0.9.4', 'version'],
@@ -260,8 +260,9 @@ test('embed.attribution', async () => {
     await readFile(join(root, outputPath, 'source-output.json'), 'utf8'),
   )
   expect(manifest.package).toBe('@cortexkit/common-auth')
-  expect(manifest.version).toBe('0.49.2')
+  expect(manifest.version).toBe('0.55.0')
   expect(manifest.artifactStatus).toBe('published')
+  expect(manifest.archiveBytes).toBe(publication.archiveBytes)
   expect(manifest.tarballSha256).toBe(publication.sha256)
   expect(manifest.shasum).toBe(publication.shasum)
   expect(manifest.sri).toBe(publication.sri)
@@ -270,8 +271,8 @@ test('embed.attribution', async () => {
     './quota-sidebar': publication.sidebarRoot,
     './routing-accessor': publication.routingAccessorRoot,
   })
-  expect(manifest.canonicalFiles).toBe(254)
-  expect(manifest.canonicalBytes).toBe(1506987)
+  expect(manifest.canonicalFiles).toBe(257)
+  expect(manifest.canonicalBytes).toBe(1522655)
   expect(manifest.generator.version).toBe(4)
   expect(manifest.files).toEqual([
     ...publication.files.map(([path, bytes, digest]) => ({
@@ -297,6 +298,14 @@ test('embed.attribution', async () => {
     hash(await readFile(join(root, manifest.generator.path))),
   )
   expect(manifest.transforms).toEqual([])
+  const coreManifest = JSON.parse(
+    await readFile(join(root, coreOutputPath, 'source-output.json'), 'utf8'),
+  )
+  expect(coreManifest.artifactStatus).toBe('published')
+  expect(coreManifest.archiveBytes).toBe(publication.archiveBytes)
+  expect(coreManifest.tarballSha256).toBe(publication.sha256)
+  expect(coreManifest.shasum).toBe(publication.shasum)
+  expect(coreManifest.sri).toBe(publication.sri)
 })
 
 test('embed.archive_refusals', async () => {
@@ -411,7 +420,7 @@ test.skipIf(!dockerExecutable && !requireDocker)(
     const dockerignore = await readFile(join(target, '.dockerignore'), 'utf8')
     expect(
       dockerignore.indexOf(
-        '!tools/common-auth-build/inputs/cortexkit-common-auth-0.49.2.tgz',
+        '!tools/common-auth-build/inputs/cortexkit-common-auth-0.55.0.tgz',
       ),
     ).toBeGreaterThan(dockerignore.indexOf('**/*.tgz'))
     expect(dockerignore).not.toMatch(/^!.*\*.*tgz/m)
@@ -447,9 +456,9 @@ test.skipIf(!dockerExecutable && !requireDocker)(
       if (container) await command(target, 'docker', ['rm', container])
       if (built) await command(target, 'docker', ['image', 'rm', tag])
     }
-    expect(await names(exported)).toEqual(['cortexkit-common-auth-0.49.2.tgz'])
+    expect(await names(exported)).toEqual(['cortexkit-common-auth-0.55.0.tgz'])
     expect(
-      hash(await readFile(join(exported, 'cortexkit-common-auth-0.49.2.tgz'))),
+      hash(await readFile(join(exported, 'cortexkit-common-auth-0.55.0.tgz'))),
     ).toBe(publication.sha256)
   },
   120000,

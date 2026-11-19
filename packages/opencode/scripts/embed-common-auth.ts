@@ -12,14 +12,15 @@ import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
 
 export const inputPath =
-  'tools/common-auth-build/inputs/cortexkit-common-auth-0.49.2.tgz'
-export const producerVersion = '0.49.2'
+  'tools/common-auth-build/inputs/cortexkit-common-auth-0.55.0.tgz'
+export const producerVersion = '0.55.0'
 export const artifactStatus = 'published'
 export const outputPath = 'packages/opencode/src/common-auth-embedded'
 export const productionPin = Object.freeze({
-  shasum: '3b7fc671e107350e62c529567465e3ccd9f134f2',
-  sha256: 'b7e8f8da2b91b920507362f88d8329b5f002bc77df9738773d69ef4045985557',
-  sri: 'sha512-gY3AWxr1UPLsENzm5uj5IF1LNnAwXUay/wsgqhJZLgcZX2SlO8fOSKL2UPEGh+pOpvZ6h8zkmxeWz1pP7J+yDA==',
+  archiveBytes: 502568,
+  shasum: '8a5d3a07ec72662120305388d051c0bdcee416f4',
+  sha256: 'b629e10e9a39c5b1e6dc7576c2d5814a23a5bbb2dad8d6c1ccddb759c14d200c',
+  sri: 'sha512-EScwmEDdxSdW/z+6n1v630bsTdAUSQYBuG4l16yziRqptG4MhjCAoH6aNelSy/I3hIJ2j6bV3IcqteoGWBLpSg==',
 })
 export const publicRoots = {
   './rpc': { types: './dist/rpc/index.d.ts', import: './dist/rpc/index.js' },
@@ -167,8 +168,8 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'auth-menu/login.js',
-    3972,
-    'f55cb1e2a40cab6ef99b5386682615dca059e8d7d982f4a508306c225084f647',
+    4283,
+    '7df6059976bad7bac619ee3f593cce57eb05b818d9df6c6fba03f7b9e2505d94',
   ],
   [
     'auth-menu/menu.d.ts',
@@ -217,8 +218,8 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'claustrum/availability.js',
-    4615,
-    '11eaa35ab38ab433f249b4b11b9e284fac5ab7e785c965fe070aef8cde593089',
+    4613,
+    '848f2c5224a37b903b186cd5dd43710ad0d5cfe590600263b613b0ea22ff1585',
   ],
   [
     'claustrum/consumer.d.ts',
@@ -237,8 +238,8 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'claustrum/custody.js',
-    43691,
-    '65a376031c602bc4592fa6402c3cb5a14219245c10c134aed7239fdf11f1e88c',
+    43686,
+    '174adfdaa909149453a34666fdf656aff90c7357e0000338c5a0a2a29d7c1e90',
   ],
   [
     'claustrum/enrollment.d.ts',
@@ -442,8 +443,8 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'fs/canonical-file-path.js',
-    2058,
-    '459c381a274053cefe98cf5e88a8d4a5554b222a744365ba44fa3b7970fe382c',
+    2287,
+    'c5a4b4ebb3468681bb237d45bb12284a165dc5faf18cfbb9d19cc19531020f40',
   ],
   [
     'fs/file-read-cache.js',
@@ -482,8 +483,8 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'fs/private-files.js',
-    15098,
-    'd26406b3fd7c4452905c4afe2da1e24c8079a20b89a449d2af45e95c4b5cc189',
+    15526,
+    '8456644c921d76d1946c9c04a6784308dfbc4c22be19d88d5b15bf629d5f4226',
   ],
   [
     'fs/refresh-file-lock.d.ts',
@@ -617,23 +618,23 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'opencode2/index.d.ts',
-    1303,
-    '50f4352606062af68347bc73ae0765ba44537928cb49db3b739d6e76daeebd53',
+    1325,
+    '03baf6a3ea7b26545ec20a03588ac7f30830c84e15f4bbde51d268218ff3e284',
   ],
   [
     'opencode2/index.js',
-    463,
-    'a626e6a4f3511e07f1e52a0969b855884bd521f0f1382ad28ed35ca83b46fc1e',
+    485,
+    '0a68a5e9af890954e96172fd475ea20e6e137ad20feb0c5ad014d4ea33dfd198',
   ],
   [
     'opencode2/install.d.ts',
-    3995,
-    '484ac235de953920bc30164f2b4e814d565b1fe0beca6847c0f65e1d1d42ec08',
+    4212,
+    'edb14a4f60ef24c85b5e4f41f94b66b5594f38628c65145841fa4bcf1bf319f6',
   ],
   [
     'opencode2/install.js',
-    65057,
-    '823040b7d0fc4b0199fdbaa68583180338b040ea1200d611c645ba9a3b22538d',
+    65592,
+    'fc98e6bd26a6835d118666b1f27fc0598dbe9f929d793b2fe619d3be7375b988',
   ],
   [
     'opencode2/integration.d.ts',
@@ -657,18 +658,18 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'opencode2/types.d.ts',
-    32757,
-    'd9e94ff62857ad062770ad64e30456c39fafbea57c488099cf06dade301120e1',
+    32971,
+    '955be769b8aacbc13f51d16a94639658424b3e02e29c2a252b4b872bfde9096f',
   ],
   [
     'pi-slot/index.d.ts',
-    230,
-    '8b2c9f002a5f8ee7f5e1da5ed2f1e13e0acfbeb0c8d9f0296d5215c3150e8798',
+    253,
+    'd095c841ccfdf0d40665409a03c459e1143ba39d7dd9f9ad4ed424592ced3e26',
   ],
   [
     'pi-slot/index.js',
-    138,
-    '4364d23400afcc9650b055673cccceacd2c1239bac4abe6cda34cf1e34a88472',
+    161,
+    'd12cf2c6d6ee31c089955de1ef7d6039afbe08e7792e1702fdf83cd10d8a084d',
   ],
   [
     'pi-slot/lock.js',
@@ -677,13 +678,13 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'pi-slot/slot.d.ts',
-    2394,
-    'b92f1590f1f0e4dbbc6331923b9d2cf95e3200936063d5ed192a186f3271eb17',
+    2135,
+    'bf45905365a9f9eb6be3e54e845420a3b22de479c51fe1c5c8d5009468a2f9b3',
   ],
   [
     'pi-slot/slot.js',
-    15120,
-    '13a7d5941b79c6d444cf9dc6f23263cf9237146c7dd5de7d162dbc21e015532c',
+    12323,
+    'f7bf6aada7b772b3e7214a7fbe3d3bb993307905041b31ad712e608e4c3f3636',
   ],
   [
     'quota/codec.d.ts',
@@ -822,13 +823,13 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'rpc/index.d.ts',
-    417,
-    '62bda8e27c98b193ba0aee81a9e405472688618952907d91c53b9635b1142eef',
+    603,
+    '30cd1c8dfe8f0fee79139e72c376a3e1da0d98284ce7549af5fc1e7a97b7f1df',
   ],
   [
     'rpc/index.js',
-    172,
-    '31aadda5190c9f8c5dd4b7c0f4bb11ce87fb79715ac4785163008fb5f0062998',
+    308,
+    '26d0da9478fb8e7f10939321515388cce283070ea9b1df3132c74350c7a2b435',
   ],
   [
     'rpc/notifications.d.ts',
@@ -842,13 +843,13 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'rpc/port-file.d.ts',
-    2015,
-    'ce68cc6b458df9296e4227aef1cddce4ca5912c629ef8fa3cc53c35b90362b75',
+    2293,
+    'e4b3574f71fa5a497b1d806913d19811e0baa0cc107165b4b99533453396484d',
   ],
   [
     'rpc/port-file.js',
-    10599,
-    'd8061667a56a35d331ce5698fd78685fee2833d985f46505d286648aef7251aa',
+    10758,
+    '2c497513d8a3f185f17e55633b50883f633421cbe12305e0c46f86b6b820d9f2',
   ],
   [
     'rpc/rpc-client.d.ts',
@@ -867,8 +868,8 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'rpc/rpc-server.js',
-    14231,
-    '62b92588917afeaa5ddb187c0e47fe5e318c313bc3e6065806052c3bef008f04',
+    14282,
+    '658fc7e48f327037bbb5e4e0b750417426865b06f08914cd2d775fe7f34bd8b7',
   ],
   [
     'rpc/server-registry.d.ts',
@@ -879,6 +880,11 @@ const canonical: readonly (readonly [string, number, string])[] = [
     'rpc/server-registry.js',
     1537,
     '7a7bb67f11f072e2fd655694445458295c5461579bc4e73b11559c9d18d3c93d',
+  ],
+  [
+    'rpc/startup-sweep.js',
+    1356,
+    '674fe3a16b48b3c184273d7bc55531b83e703b6aa32f2413aec98a50f0dd1e30',
   ],
   [
     'settings/define.d.ts',
@@ -1047,8 +1053,8 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'setup/command.js',
-    15044,
-    'edbaa8a02ccd4aad9462906ee76a7e1a02f115d34ce3d8fc516d9514ebc315c1',
+    16225,
+    '64e62236825cb70fa772991fdf467e7dd7e779e348fb123137fa60edec6eddbe',
   ],
   [
     'setup/config-write.js',
@@ -1067,13 +1073,13 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'setup/enroll.d.ts',
-    2326,
-    '52113737bb13d5e65e1cf48b199a4c487215c9a154ebf8136bd5e50107ee68ca',
+    2404,
+    '3b5cd16579c2b6a830508a28f4217b8076a4846faeabcd844d6c4109379a8391',
   ],
   [
     'setup/enroll.js',
-    9707,
-    '6d63da24cfe89385889d190323b4781c0dfd223b4d9077f97679ff79f9c9091a',
+    10204,
+    'b2bf96e7af9f0d04ec654f7821bcfc6cf149d86779b680d9791b99fd82198c51',
   ],
   [
     'setup/enrollment-access.js',
@@ -1107,13 +1113,23 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'setup/process-fence.d.ts',
-    2223,
-    'ed246d2c16821cc51170e4099466450e26821c81fc3b96ad2d7fde18ea4ee9c6',
+    2699,
+    '63ecbcd232c70547f168156e0bff44d3a1b9ecfd746e1a16dd8c84db112f637f',
   ],
   [
     'setup/process-fence.js',
-    14008,
-    '8ca9546a205fe9d6daecc2604c7e4608df5d09e0bd0f774fe8da40f26a3ffefb',
+    15880,
+    '1d7ee431c9b63aec37e1868df53f0f9c776ccd45d7935282493d1f1d3d6c6127',
+  ],
+  [
+    'setup/process-guard.d.ts',
+    474,
+    '61a878c9dcd34adca08d2dbfa9a4e9b697d8982084a9f6534bae9f9cce2414fe',
+  ],
+  [
+    'setup/process-guard.js',
+    1050,
+    '8326c61a43fbc56929eea0d6a6710b3f227d6b2d6848ccc0d6db623ca8b1a3db',
   ],
   [
     'setup/prompts.js',
@@ -1122,13 +1138,13 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'setup/register.d.ts',
-    816,
-    '9f9c32e5eaea9623594b07dde03be3a03dec5e9569e882a7e769a9e14d67c317',
+    894,
+    '64e1c96e58f18a8975a01b93ba6d9aace2b7ed697900782c820b6f61cc9bcd84',
   ],
   [
     'setup/register.js',
-    9616,
-    '6318e5747df8b6e56ab4ac5e26fbc2d7446f4ab550d7a700cbc6ce19d8f80e7a',
+    10191,
+    '14990618445beb7d781a7f3957d95efec78fc972388ac18bd943743f0a41370a',
   ],
   [
     'setup/types.d.ts',
@@ -1177,13 +1193,13 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'store/index.d.ts',
-    2165,
-    'd2fb560fa7f3849b647936f930b1ca3bd4e62c6cfd3ad465ce579d4dd3baa03c',
+    2185,
+    'a5d088d5b80d7b06a6a32c59be3ca5586f28998319a7bb65e8e515f34097c462',
   ],
   [
     'store/index.js',
-    534,
-    'ec9782b6e92e9fb2fe3b17b13d5dbbed0792c30cd0f04b84c1cdaa642f785db8',
+    554,
+    '26ed0d3c05e44cb0d98564f7759f46831c170f7ce7f331f3c8f83a13977d9d55',
   ],
   [
     'store/limits-namespace.d.ts',
@@ -1202,8 +1218,8 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'store/mutate.js',
-    20171,
-    'd61d08f2caed6d7a803ca4c67511e5133d28f21a90a7417f76e23b49ed00591d',
+    21075,
+    'e2b69c850dface416ff3ebc54e2f57fd5c36b5346055b90195493cada75b6901',
   ],
   [
     'store/pool.d.ts',
@@ -1307,13 +1323,13 @@ const canonical: readonly (readonly [string, number, string])[] = [
   ],
   [
     'store/settings.d.ts',
-    3144,
-    'a9ca8fd8d0729647b338ba2c160e09879faf5a363b548505d69da73a743e93b2',
+    3600,
+    'ea25fc84311df778fb4ac1c6bc5379c13bd074eaf6653c45795999a14201b674',
   ],
   [
     'store/settings.js',
-    6395,
-    '5fb7fc8af7966be2aee5aca72fd863a9f78f5fed22ce33871145da07f4813b33',
+    6839,
+    '693d023ecb7015bb065b349fd2ea83c358634ecf3968c5074fb97726a12bb7a6',
   ],
   [
     'store/torn.d.ts',
@@ -1380,15 +1396,15 @@ const routingAccessorCanonical: readonly CanonicalEntry[] = [
     kind: 'dist',
     source: 'package/dist/routing-accessor/cache-policy.d.ts',
     output: 'routing-accessor/cache-policy.d.ts',
-    bytes: 2499,
-    hash: '941d59d7758fe9958c7ad50f744d8d127419f71d0cc44c043af49750089d5dbc',
+    bytes: 2538,
+    hash: 'ba03659d97c5b80770452a467dfdcf2d2ca2c2a9e734c5ce8c3e1c46a35b3d89',
   },
   {
     kind: 'dist',
     source: 'package/dist/routing-accessor/cache-policy.js',
     output: 'routing-accessor/cache-policy.js',
-    bytes: 7035,
-    hash: '3dd1190a495f02c9a35638065c22f34372b7aaf37817ceb31920eead004abcf2',
+    bytes: 7058,
+    hash: '1a6eb0ccd5d7786dfaf356e6b3955931ecbc75fd8d15d01d0e457bcee7a8a569',
   },
   {
     kind: 'dist',
@@ -1401,15 +1417,15 @@ const routingAccessorCanonical: readonly CanonicalEntry[] = [
     kind: 'dist',
     source: 'package/dist/routing-accessor/index.d.ts',
     output: 'routing-accessor/index.d.ts',
-    bytes: 8159,
-    hash: 'be4ee94f1f7ebcc587388df1c4c7744d2f15d6f1cabe08734fdec91012b0946f',
+    bytes: 10161,
+    hash: '9a53d387aea7a3423225372bd8a61000838e1c7bb5818c93a32455f2037c315f',
   },
   {
     kind: 'dist',
     source: 'package/dist/routing-accessor/index.js',
     output: 'routing-accessor/index.js',
-    bytes: 18496,
-    hash: 'e4b90716dfc490aa2abca9062b46f2da30b49d8478d101888efbb6b93de63662',
+    bytes: 22848,
+    hash: '13f13701391958c2e1f52d614a78da8d276594a90ee54b4f6af33bf81b4ca669',
   },
 ]
 
@@ -1536,9 +1552,9 @@ export function validatePublication(
   )
     throw new Error('publication: license')
   if (
-    entries.size !== 367 ||
+    entries.size !== 371 ||
     sha256(`${[...entries.keys()].sort().join('\n')}\n`) !==
-      'cf84a79d5eef846163274f3f259bacd29b60f87b37348fdbf11755e533957c42'
+      '4c51b6fe88b8328d03d095e996ad2ae1c8283853fd7b1ea5f2012e3cd7606393'
   )
     throw new Error('publication: inventory')
   for (const { source, output, bytes, hash } of canonicalEntries('opencode')) {
@@ -1548,7 +1564,7 @@ export function validatePublication(
   }
   if (
     sha256(entries.get('package/package.json') ?? '') !==
-    '5a4dc12e550f7c22a5d84363f4d52e4a93615c755f034b0756abe3a8aaa75f3f'
+    'f9c431976a1e55042d827cf0defcfe8582eb7b3e2d07ee792480af9b102ac610'
   )
     throw new Error('publication: manifest bytes')
 }
@@ -1605,6 +1621,7 @@ function profileOutputs(
     package: '@cortexkit/common-auth',
     version: producerVersion,
     artifactStatus,
+    archiveBytes: productionPin.archiveBytes,
     publicRoots: profile.publicRoots,
     input: inputPath,
     tarballSha256: productionPin.sha256,

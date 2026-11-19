@@ -1056,6 +1056,34 @@ describe('request.ts', () => {
     const mockAccessToken = 'test-token'
     const mockProjectId = 'test-project'
 
+    it('rewrites OpenCode 2.3 system identity and Code Mode namespace without changing user content', () => {
+      const systemPrompt =
+        'You are an AI agent running in OpenCode, a coding agent harness. Help the user accomplish their goals using the tools you have available.\n\nUse tools.opencode.session_move().'
+      const result = prepareAntigravityRequest(
+        'https://generativelanguage.googleapis.com/v1beta/models/antigravity-gemini-3.5-flash:generateContent',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
+          }),
+        },
+        mockAccessToken,
+        mockProjectId,
+        undefined,
+      )
+
+      const wrapped = JSON.parse(result.init.body as string)
+      expect(wrapped.request.systemInstruction.parts).toEqual([
+        {
+          text: "You are an AI agent running inside your development environment. Help the user accomplish their goals using the tools you have available.\n\nUse tools['opencode'].session_move().",
+        },
+      ])
+      expect(wrapped.request.contents).toEqual([
+        { role: 'user', parts: [{ text: systemPrompt }] },
+      ])
+    })
+
     it('prepares both captured Claude low configurations through host variants and current persisted headers', () => {
       // Both Claude Low captures in agy 1.5.8 omit the older zero thinking budget.
       for (const fixture of [opusLow, sonnetLow]) {
@@ -3867,6 +3895,73 @@ describe('current Claude warmup admission', () => {
 })
 
 describe('tool schema wire normalization', () => {
+  it('Gemini outbound tools contain no array-valued type anywhere', () => {
+    const prepared = prepareAntigravityRequest(
+      'https://generativelanguage.googleapis.com/v1beta/models/antigravity-gemini-3.8-flash-low:generateContent',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: 'Use flow' }] }],
+          tools: [
+            {
+              functionDeclarations: [
+                {
+                  name: 'flow',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      trigger: {
+                        type: [
+                          'object',
+                          'array',
+                          'string',
+                          'number',
+                          'boolean',
+                          'null',
+                        ],
+                      },
+                      value: { type: ['string', 'number'] },
+                      rows: {
+                        type: 'array',
+                        items: {
+                          type: ['array', 'string'],
+                          items: { type: ['integer', 'boolean'] },
+                          minLength: 2,
+                        },
+                      },
+                      choice: { anyOf: [{ type: ['string', 'number'] }] },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      },
+      'access-token',
+      'schema-test-project',
+      undefined,
+    )
+    const tools: unknown = JSON.parse(prepared.init.body as string).request
+      .tools
+    expect(Array.isArray(tools)).toBe(true)
+    expect(tools).not.toEqual([])
+    const arrayTypePaths: string[] = []
+    function visit(value: unknown, path: string) {
+      if (!value || typeof value !== 'object') return
+      if (
+        !Array.isArray(value) &&
+        Array.isArray((value as Record<string, unknown>).type)
+      ) {
+        arrayTypePaths.push(`${path}.type`)
+      }
+      for (const [key, child] of Object.entries(value))
+        visit(child, `${path}.${key}`)
+    }
+    visit(tools, 'request.tools')
+    expect(arrayTypePaths).toEqual([])
+  })
+
   for (const [family, model] of [
     ['Gemini', 'antigravity-gemini-3.8-flash-low'],
     ['Claude', 'antigravity-claude-sonnet-5-5-low'],
