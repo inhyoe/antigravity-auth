@@ -1,0 +1,34 @@
+{
+  "source": "v1internal:fetchAvailableModels on the daily endpoint, Google AI Ultra account, user agent antigravity cli/1.5.8, 2026-11-19. Only the four gemini-4-neon routes are kept; quota fields are omitted.",
+  "defaultAgentModelId": "gemini-4-neon-high",
+  "routes": {
+    "gemini-4-neon-low": {
+      "displayName": "Gemini 4 Neon (Low)",
+      "model": "MODEL_PLACEHOLDER_M534",
+      "maxTokens": 1048576,
+      "maxOutputTokens": 262144,
+      "thinkingLevel": 1
+    },
+    "gemini-4-neon-medium": {
+      "displayName": "Gemini 4 Neon (Medium)",
+      "model": "MODEL_PLACEHOLDER_M533",
+      "maxTokens": 1048576,
+      "maxOutputTokens": 262144,
+      "thinkingLevel": 2
+    },
+    "gemini-4-neon-high": {
+      "displayName": "Gemini 4 Neon (High)",
+      "model": "MODEL_PLACEHOLDER_M532",
+      "maxTokens": 1048576,
+      "maxOutputTokens": 262144,
+      "thinkingLevel": 3
+    },
+    "gemini-4-neon-xhigh": {
+      "displayName": "Gemini 4 Neon (XHigh)",
+      "model": "MODEL_PLACEHOLDER_M535",
+      "maxTokens": 1048576,
+      "maxOutputTokens": 262144,
+      "thinkingLevel": 100
+    }
+  }
+}

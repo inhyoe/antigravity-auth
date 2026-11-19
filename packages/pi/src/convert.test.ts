@@ -135,7 +135,9 @@ describe('buildGeminiRequest', () => {
     })
     expect(request.contents[0]?.parts).toEqual([
       {
-        text: `You are a coding assistant running inside your development environment. Assist users with inspecting files, running commands, and modifying code.\n\n${piBoltDefault}`,
+        // The merged 3.1.9 harness rewrite drops the Pi-Bolt clause entirely; the
+        // fork's second-sentence neutralization still applies on top of it.
+        text: `You are a coding assistant. Assist users with inspecting files, running commands, and modifying code.\n\n${piBoltDefault}`,
       },
     ])
     expect(request.contents[1]?.parts).toEqual([{ text: piBoltDefault }])

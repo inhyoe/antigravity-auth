@@ -27,9 +27,9 @@ import { runCommand } from '../support/run-command.ts'
 const repoRoot = resolve(import.meta.dir, '../..')
 const coreRoot = join(repoRoot, 'packages/core')
 const piRoot = join(repoRoot, 'packages/pi')
-const piPackage = '@cortexkit/pi-antigravity-auth'
+const piPackage = '@inhyoe/pi-antigravity-auth'
 const CLAUSTRUM_CLIENT = '@cortexkit/claustrum-client'
-const corePackage = '@cortexkit/antigravity-auth-core'
+const corePackage = '@inhyoe/antigravity-auth-core'
 const ENTRIES = [
   'store',
   'fs',

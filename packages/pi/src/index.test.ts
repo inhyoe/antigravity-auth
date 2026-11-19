@@ -350,6 +350,7 @@ describe('Pi Antigravity model catalog', () => {
       'antigravity-gemini-4-argon',
       'antigravity-gemini-4-carbon',
       'antigravity-gemini-4-hydrogen',
+      'antigravity-gemini-4-neon',
       'antigravity-gpt-oss-120b-medium',
     ])
   })
@@ -456,6 +457,7 @@ it('replaces the native Google catalog and reads only the google OAuth credentia
       'antigravity-gemini-4-argon',
       'antigravity-gemini-4-carbon',
       'antigravity-gemini-4-hydrogen',
+      'antigravity-gemini-4-neon',
       'antigravity-gpt-oss-120b-medium',
     ])
     for (const family of ['opus', 'sonnet']) {

@@ -203,8 +203,12 @@ describe('published dependency ranges', () => {
     expect(ourManifest.dependencies).not.toHaveProperty('@openauthjs/openauth')
     expect(coreManifest.dependencies).not.toHaveProperty('@openauthjs/openauth')
     // Setup statically imports enrollment; clients stay external and share the core copy.
+    // This repository's core is published as @inhyoe/antigravity-auth-core
+    // (3.1.10+); OpenCode keeps its import name through a workspace alias.
+    expect(coreManifest.name).toBe('@inhyoe/antigravity-auth-core')
     expect(ourManifest.dependencies).toEqual({
-      '@cortexkit/antigravity-auth-core': coreManifest.version,
+      '@cortexkit/antigravity-auth-core':
+        'workspace:@inhyoe/antigravity-auth-core@*',
       '@cortexkit/claustrum-client': '0.18.0',
       '@cortexkit/subc-client': '0.24.0',
       '@cortexkit/private-files': '0.2.2',
